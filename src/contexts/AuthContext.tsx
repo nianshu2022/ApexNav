@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { saveCategories, saveSites, saveNodes, syncUserWithD1, DEFAULT_CATEGORIES, DEFAULT_SITES, DEFAULT_NODES } from '../utils/storage';
+import { saveCategories, saveSites, saveNodes, syncUserWithD1 } from '../utils/storage';
 
 const STORAGE_KEY_PW_PREFIX = 'apexnav_auth_pw_';
 const STORAGE_KEY_UN_PREFIX = 'apexnav_auth_un_';
@@ -68,11 +68,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('apexnav_auth_username', unHash);
     localStorage.setItem('apexnav_auth_password', pwHash);
 
-    // Initialize new account with starter template bookmarks
-    saveCategories(DEFAULT_CATEGORIES, cleanUn);
-    saveSites(DEFAULT_SITES, cleanUn);
-    saveNodes(DEFAULT_NODES, cleanUn);
-    syncUserWithD1(cleanUn, DEFAULT_CATEGORIES, DEFAULT_SITES, DEFAULT_NODES);
+    // Initialize new account with clean empty workspace
+    saveCategories([], cleanUn);
+    saveSites([], cleanUn);
+    saveNodes([], cleanUn);
+    syncUserWithD1(cleanUn, [], [], []);
 
     // Attempt D1 Register API
     try {

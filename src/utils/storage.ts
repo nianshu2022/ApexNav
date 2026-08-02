@@ -9,7 +9,7 @@ const STORAGE_KEYS = {
 
 // ─────────────────────────────────────────────────────────
 // Default demo data (generic, open-source friendly)
-// Used for unauthenticated guests AND as starter template for new accounts.
+// Preserved for unauthenticated guests ONLY.
 // ─────────────────────────────────────────────────────────
 
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -82,11 +82,11 @@ export const getStoredCategories = (username?: string | null): Category[] => {
     const key = `apexnav_categories_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
-    // Initialize new account with default categories template
-    saveCategories(DEFAULT_CATEGORIES, username);
-    return DEFAULT_CATEGORIES;
+    // Initialize new account with clean empty workspace
+    saveCategories([], username);
+    return [];
   } catch {
-    return DEFAULT_CATEGORIES;
+    return [];
   }
 };
 
@@ -102,11 +102,11 @@ export const getStoredSites = (username?: string | null): Site[] => {
     const key = `apexnav_sites_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
-    // Initialize new account with default sites template
-    saveSites(DEFAULT_SITES, username);
-    return DEFAULT_SITES;
+    // Initialize new account with clean empty workspace
+    saveSites([], username);
+    return [];
   } catch {
-    return DEFAULT_SITES;
+    return [];
   }
 };
 
@@ -122,11 +122,11 @@ export const getStoredNodes = (username?: string | null): any[] => {
     const key = `apexnav_nodes_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
-    // Initialize new account with default nodes template
-    saveNodes(DEFAULT_NODES, username);
-    return DEFAULT_NODES;
+    // Initialize new account with clean empty workspace
+    saveNodes([], username);
+    return [];
   } catch {
-    return DEFAULT_NODES;
+    return [];
   }
 };
 
