@@ -1,0 +1,20 @@
+<!-- 精美的指南针 SVG favicon，与 ApexNav 品牌风格一致 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="50%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#ec4899"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded rect -->
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <!-- Compass needle - north (white) -->
+  <polygon points="16,5 18,16 16,14 14,16" fill="white" opacity="0.95"/>
+  <!-- Compass needle - south (white semi) -->
+  <polygon points="16,27 14,16 16,18 18,16" fill="white" opacity="0.45"/>
+  <!-- Center dot -->
+  <circle cx="16" cy="16" r="2" fill="white"/>
+  <!-- Outer ring -->
+  <circle cx="16" cy="16" r="11" fill="none" stroke="white" stroke-width="1.2" opacity="0.4"/>
+</svg>

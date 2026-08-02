@@ -1,0 +1,147 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Tailwind v4: Use .dark class for manual dark mode toggle (not OS media query) */
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
+  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+/* -------------------------------------------------------------
+   DEFAULT MODE: Original Apple Bento Component Styles
+------------------------------------------------------------- */
+.glass-panel {
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  transition: background 0.3s ease, backdrop-filter 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.glass-card {
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  transition: background 0.3s ease, backdrop-filter 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+/* -------------------------------------------------------------
+   DARK MODE: Enhanced Card Borders, Depth & Text Contrast
+------------------------------------------------------------- */
+:where(.dark, .dark *) .glass-panel {
+  border-color: rgba(99, 102, 241, 0.2) !important;
+  box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+:where(.dark, .dark *) .glass-card {
+  border-color: rgba(99, 102, 241, 0.18) !important;
+  box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* -------------------------------------------------------------
+   WALLPAPER MODE: iOS 27 Vision Pro Liquid Crystal Transparent Glass
+   With High-Contrast Legibility Boost
+------------------------------------------------------------- */
+.wallpaper-active .glass-panel {
+  background: rgba(255, 255, 255, 0.35) !important;
+  backdrop-filter: blur(32px) saturate(220%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(220%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.2), inset 0 1px 1px 0 rgba(255, 255, 255, 0.85) !important;
+}
+
+.wallpaper-active.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(32px) saturate(220%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(220%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.45), inset 0 1px 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+.wallpaper-active .glass-card {
+  background: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(24px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.15), inset 0 1px 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+.wallpaper-active.dark .glass-card {
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(24px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.4), inset 0 1px 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+/* High-Contrast Legibility Boost on Transparent Glass */
+.wallpaper-active p,
+.wallpaper-active span,
+.wallpaper-active h3,
+.wallpaper-active div,
+.wallpaper-active a {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.wallpaper-active .text-slate-400,
+.wallpaper-active .text-slate-500 {
+  color: rgba(30, 41, 59, 0.85) !important;
+  font-weight: 600 !important;
+}
+
+.wallpaper-active.dark .text-slate-400,
+.wallpaper-active.dark .text-slate-500 {
+  color: rgba(241, 245, 249, 0.85) !important;
+  font-weight: 600 !important;
+}
+
+.wallpaper-active .text-purple-600 {
+  color: #6b21a8 !important;
+  font-weight: 700 !important;
+}
+
+.wallpaper-active.dark .text-purple-400 {
+  color: #e9d5ff !important;
+  font-weight: 700 !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+@keyframes floatGlow {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-25px) scale(1.08);
+    opacity: 0.65;
+  }
+}
