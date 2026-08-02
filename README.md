@@ -2,6 +2,8 @@
 
 ApexNav 是一款基于 **React 19 + TypeScript + Tailwind CSS v4 + Vite** 打造的苹果 Vision Pro 玻璃质感极简导航主页。自带多引擎搜索联想、Bento 小组件矩阵、多账号隔离与双模式权限控制、Cloudflare D1 跨设备云端实时同步与本地 JSON 备份恢复。
 
+🌐 **官方线上演示站点**：[https://nav.nianshu2022.cn](https://nav.nianshu2022.cn)
+
 ---
 
 ## 📸 界面预览 (UI Screenshots)
