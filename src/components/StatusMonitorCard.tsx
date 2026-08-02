@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, RefreshCw, CheckCircle2, Plus, X, Globe, ShieldCheck, Zap } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { getStoredNodes, saveNodes, DEFAULT_NODES } from '../utils/storage';
 
 interface MonitoredNode {
   id: string;
@@ -10,24 +12,15 @@ interface MonitoredNode {
   latency?: number;
 }
 
-const DEFAULT_NODES: MonitoredNode[] = [
-  { id: 'demo_node', name: '示例网站', url: 'https://www.cloudflare.com', status: 'online', latency: 24 },
-];
-
 interface StatusMonitorCardProps {
   isAdmin?: boolean;
 }
 
 export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = false }) => {
+  const { currentUsername } = useAuth();
+
   const [nodes, setNodes] = useState<MonitoredNode[]>(() => {
-    const saved = localStorage.getItem('apexnav_monitored_nodes_v4');
-    if (saved !== null) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch { /* Fallback */ }
-    }
-    return DEFAULT_NODES;
+    return getStoredNodes(currentUsername);
   });
 
   const [checking, setChecking] = useState<boolean>(false);
@@ -35,14 +28,17 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
   const [newNodeName, setNewNodeName] = useState('');
   const [newNodeUrl, setNewNodeUrl] = useState('');
 
-  // Listen to first-time account setup event to clear demo nodes
+  // Listen to auth user switching to reload nodes
   useEffect(() => {
-    const handleAccountSetup = () => {
-      setNodes([]);
+    const handleAuthChange = (e: any) => {
+      const un = e.detail?.username !== undefined ? e.detail.username : currentUsername;
+      setNodes(getStoredNodes(un));
     };
-    window.addEventListener('apexnav_account_setup', handleAccountSetup);
-    return () => window.removeEventListener('apexnav_account_setup', handleAccountSetup);
-  }, []);
+
+    setNodes(getStoredNodes(currentUsername));
+    window.addEventListener('apexnav_auth_change', handleAuthChange);
+    return () => window.removeEventListener('apexnav_auth_change', handleAuthChange);
+  }, [currentUsername]);
 
   const checkNodeStatus = async (node: MonitoredNode): Promise<MonitoredNode> => {
     const start = performance.now();
@@ -62,11 +58,14 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
   };
 
   const checkAllNodes = async () => {
+    if (nodes.length === 0) return;
     setChecking(true);
     setNodes((prev) => prev.map((n) => ({ ...n, status: 'checking' as const })));
     const updated = await Promise.all(nodes.map((n) => checkNodeStatus(n)));
     setNodes(updated);
-    localStorage.setItem('apexnav_monitored_nodes_v4', JSON.stringify(updated));
+    if (currentUsername) {
+      saveNodes(updated, currentUsername);
+    }
     setChecking(false);
   };
 
@@ -74,7 +73,7 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
 
   const handleAddNode = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNodeName.trim() || !newNodeUrl.trim()) return;
+    if (!newNodeName.trim() || !newNodeUrl.trim() || !currentUsername) return;
     let formattedUrl = newNodeUrl.trim();
     if (!/^https?:\/\//i.test(formattedUrl)) formattedUrl = `https://${formattedUrl}`;
     const newNode: MonitoredNode = {
@@ -85,12 +84,16 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
     };
     const updated = [...nodes, newNode];
     setNodes(updated);
-    localStorage.setItem('apexnav_monitored_nodes_v4', JSON.stringify(updated));
+    saveNodes(updated, currentUsername);
     setNewNodeName('');
     setNewNodeUrl('');
     setIsAddModalOpen(false);
     checkNodeStatus(newNode).then((res) => {
-      setNodes((cur) => cur.map((n) => (n.id === res.id ? res : n)));
+      setNodes((cur) => {
+        const next = cur.map((n) => (n.id === res.id ? res : n));
+        saveNodes(next, currentUsername);
+        return next;
+      });
     });
   };
 
@@ -98,7 +101,9 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
     e.stopPropagation();
     const updated = nodes.filter((n) => n.id !== id);
     setNodes(updated);
-    localStorage.setItem('apexnav_monitored_nodes_v4', JSON.stringify(updated));
+    if (currentUsername) {
+      saveNodes(updated, currentUsername);
+    }
   };
 
   const onlineCount = nodes.filter((n) => n.status === 'online').length;
@@ -120,85 +125,86 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
           {isAdmin && (
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-              title="添加自定义监控节点"
+              className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white/60 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              title="添加监控节点"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-4 h-4" />
             </button>
           )}
           <button
             onClick={checkAllNodes}
-            disabled={checking}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-            title="重新测速"
+            disabled={checking || nodes.length === 0}
+            className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white/60 dark:hover:bg-slate-800/60 transition-colors cursor-pointer disabled:opacity-30"
+            title="刷新节点状态"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin text-indigo-500' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* Nodes List */}
-      <div className="my-1.5 flex-1 flex flex-col justify-between">
-        {nodes.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center p-3 text-center">
-            <p className="text-xs text-slate-400 dark:text-slate-500">暂无监控节点</p>
+      {/* Node List */}
+      <div className="space-y-1.5 my-1">
+        {nodes.length === 0 ? (
+          <div className="py-4 text-center text-xs text-slate-400 dark:text-slate-500 space-y-2">
+            <Globe className="w-6 h-6 mx-auto opacity-40" />
+            <p>暂无监控节点</p>
             {isAdmin && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="mt-1.5 text-xs font-semibold text-indigo-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
               >
                 + 添加第一个节点
               </button>
             )}
           </div>
-        )}
-
-        {nodes.slice(0, 3).map((node) => (
-          <a
-            key={node.id}
-            href={node.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group/node flex items-center justify-between px-2.5 py-2 rounded-2xl bg-white/40 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 border border-white/50 dark:border-slate-700/40 transition-all text-xs my-0.5"
-          >
-            <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                {node.status === 'online' ? (
-                  <>
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                  </>
-                ) : node.status === 'checking' ? (
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400 animate-pulse" />
-                ) : (
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
-                )}
-              </span>
-              <span className="font-extrabold text-sm text-slate-900 dark:text-white group-hover/node:text-indigo-600 dark:group-hover/node:text-indigo-400 truncate">
-                {node.name}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2 shrink-0">
-              {node.latency !== undefined ? (
-                <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-0.5">
-                  <Zap className="w-3 h-3 text-amber-500" />
-                  {node.latency}ms
+        ) : (
+          nodes.map((node) => (
+            <a
+              key={node.id}
+              href={node.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group/node flex items-center justify-between px-2.5 py-2 rounded-2xl bg-white/40 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 border border-white/50 dark:border-slate-700/40 transition-all text-xs my-0.5"
+            >
+              <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  {node.status === 'online' ? (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                    </>
+                  ) : node.status === 'checking' ? (
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400 animate-pulse" />
+                  ) : (
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                  )}
                 </span>
-              ) : (
-                <span className="font-mono text-xs text-rose-500 font-bold">超时</span>
-              )}
-              {isAdmin && (
-                <button
-                  onClick={(e) => handleDeleteNode(node.id, e)}
-                  className="opacity-0 group-hover/node:opacity-100 text-slate-400 hover:text-rose-500 transition-opacity p-0.5 cursor-pointer"
-                  title="删除节点"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </a>
-        ))}
+                <span className="font-extrabold text-sm text-slate-900 dark:text-white group-hover/node:text-indigo-600 dark:group-hover/node:text-indigo-400 truncate">
+                  {node.name}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2 shrink-0">
+                {node.latency !== undefined ? (
+                  <span className="font-mono text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-0.5">
+                    <Zap className="w-3 h-3 text-amber-500" />
+                    {node.latency}ms
+                  </span>
+                ) : (
+                  <span className="font-mono text-xs text-rose-500 font-bold">超时</span>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={(e) => handleDeleteNode(node.id, e)}
+                    className="opacity-0 group-hover/node:opacity-100 text-slate-400 hover:text-rose-500 transition-opacity p-0.5 cursor-pointer"
+                    title="删除节点"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </a>
+          ))
+        )}
 
         {nodes.length === 1 && (
           <div className="flex items-center justify-between px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -211,90 +217,78 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
-        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+      {/* Footer info */}
+      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-400 font-semibold pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
+        <span className="flex items-center space-x-1 text-emerald-600 dark:text-emerald-400">
           <CheckCircle2 className="w-3.5 h-3.5" />
           <span>实时运行监控</span>
         </span>
-        <span className="text-xs font-mono text-slate-400">实时测速</span>
+        <span className="font-mono text-slate-400">实时测速</span>
       </div>
 
-      {/* Add Node Modal — rendered via Portal to avoid z-index/transform issues */}
-      {isAddModalOpen && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
-        >
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/60 dark:border-slate-700/60 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-
-            {/* Modal Header */}
-            <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-purple-500/15 dark:from-indigo-500/25 dark:to-purple-500/25 flex items-center justify-center border border-indigo-200/40 dark:border-indigo-700/40">
-                  <Globe className="w-5 h-5 text-indigo-500" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">添加监控节点</h3>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500">监控个人博客、API 或自定义网址</p>
-                </div>
-              </div>
+      {/* Portal Add Node Sub-Modal */}
+      {isAddModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[99999] animate-in fade-in">
+            <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl relative">
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4 text-slate-400" />
+                <X className="w-5 h-5" />
               </button>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-indigo-500" />
+                添加监控节点
+              </h3>
+              <form onSubmit={handleAddNode} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    节点名称 *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={newNodeName}
+                    onChange={(e) => setNewNodeName(e.target.value)}
+                    placeholder="例如：香港主站、API服务"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    节点 URL / 域名 *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newNodeUrl}
+                    onChange={(e) => setNewNodeUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  />
+                </div>
+                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/25 cursor-pointer"
+                  >
+                    添加
+                  </button>
+                </div>
+              </form>
             </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleAddNode} className="px-6 py-5 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                  节点名称 *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newNodeName}
-                  onChange={(e) => setNewNodeName(e.target.value)}
-                  placeholder="例如：念舒博客备用节点"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                  监控 URL *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newNodeUrl}
-                  onChange={(e) => setNewNodeUrl(e.target.value)}
-                  placeholder="例如：blog.nianshu2022.cn"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all font-mono"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-lg shadow-indigo-600/25 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
-                >
-                  立即添加
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-// Cloudflare Pages Function API for ApexNav D1 Cross-Device Sync
+// Cloudflare Pages Function API for Multi-Account D1 Cross-Device Sync
 
 interface Env {
   DB?: any;
@@ -7,7 +7,6 @@ interface Env {
 export const onRequest: any = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
   const url = new URL(request.url);
-  const path = url.pathname;
 
   const headers = {
     'Content-Type': 'application/json',
@@ -25,7 +24,7 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
     return new Response(
       JSON.stringify({
         success: false,
-        message: 'D1 Database not bound yet. Using local fallback.',
+        message: 'D1 Database not bound yet.',
       }),
       { headers, status: 200 }
     );
@@ -34,61 +33,82 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
   try {
     // Ensure table exists
     await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS nav_data (
-        id TEXT PRIMARY KEY,
+      CREATE TABLE IF NOT EXISTS user_nav_data (
+        username TEXT PRIMARY KEY,
         categories_json TEXT NOT NULL,
         sites_json TEXT NOT NULL,
+        nodes_json TEXT NOT NULL,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `).run();
 
-    // GET /api/data -> Read D1 data
+    // GET /api/data?username=xxx -> Fetch account-specific data from D1
     if (request.method === 'GET') {
-      const row = await env.DB.prepare('SELECT categories_json, sites_json FROM nav_data WHERE id = ?')
-        .bind('main')
+      const username = url.searchParams.get('username')?.trim().toLowerCase();
+
+      if (!username) {
+        return new Response(JSON.stringify({ success: true, categories: null, sites: null, nodes: null }), { headers });
+      }
+
+      const row = await env.DB.prepare(
+        'SELECT categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?'
+      )
+        .bind(username)
         .first();
 
       if (!row) {
-        return new Response(JSON.stringify({ success: true, categories: null, sites: null }), { headers });
+        return new Response(
+          JSON.stringify({ success: true, isNewUser: true, categories: [], sites: [], nodes: [] }),
+          { headers }
+        );
       }
 
       return new Response(
         JSON.stringify({
           success: true,
+          isNewUser: false,
           categories: JSON.parse(row.categories_json),
           sites: JSON.parse(row.sites_json),
+          nodes: JSON.parse(row.nodes_json),
         }),
         { headers }
       );
     }
 
-    // POST /api/data -> Save D1 data
+    // POST /api/data -> Save account-specific data into D1
     if (request.method === 'POST') {
       const body = await request.json();
-      const { categories, sites } = body;
+      const { username, categories, sites, nodes } = body;
 
-      if (!categories || !sites) {
+      if (!username || !Array.isArray(categories) || !Array.isArray(sites)) {
         return new Response(JSON.stringify({ success: false, message: 'Invalid payload' }), {
           headers,
           status: 400,
         });
       }
 
+      const cleanUsername = username.trim().toLowerCase();
+      const nodesData = Array.isArray(nodes) ? nodes : [];
+
       await env.DB.prepare(`
-        INSERT INTO nav_data (id, categories_json, sites_json, updated_at)
-        VALUES ('main', ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(id) DO UPDATE SET
+        INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(username) DO UPDATE SET
           categories_json = excluded.categories_json,
           sites_json = excluded.sites_json,
+          nodes_json = excluded.nodes_json,
           updated_at = CURRENT_TIMESTAMP
       `)
-        .bind(JSON.stringify(categories), JSON.stringify(sites))
+        .bind(cleanUsername, JSON.stringify(categories), JSON.stringify(sites), JSON.stringify(nodesData))
         .run();
 
-      return new Response(JSON.stringify({ success: true, message: 'Synced to Cloudflare D1' }), { headers });
+      return new Response(
+        JSON.stringify({ success: true, message: `Synced ${cleanUsername} data to Cloudflare D1` }),
+        { headers }
+      );
     }
 
-    return new Response(JSON.stringify({ success: false, message: 'Not found' }), { headers, status: 44 });
+    return new Response(JSON.stringify({ success: false, message: 'Not found' }), { headers, status: 404 });
   } catch (err: any) {
     return new Response(JSON.stringify({ success: false, error: err.message }), { headers, status: 500 });
   }

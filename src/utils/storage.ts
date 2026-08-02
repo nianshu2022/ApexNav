@@ -1,8 +1,6 @@
 import type { Category, Site, TodoItem } from '../types';
 
 const STORAGE_KEYS = {
-  categories: 'apexnav_categories',
-  sites: 'apexnav_sites',
   todos: 'apexnav_todos',
   notes: 'apexnav_notes',
   theme: 'apexnav_theme',
@@ -11,7 +9,7 @@ const STORAGE_KEYS = {
 
 // ─────────────────────────────────────────────────────────
 // Default demo data (generic, open-source friendly)
-// After deploying, log in as admin and import your own backup JSON.
+// Preserved for unauthenticated guests. Never deleted!
 // ─────────────────────────────────────────────────────────
 
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -68,35 +66,65 @@ export const DEFAULT_SITES: Site[] = [
   { id: 's31', category_id: '6', name: '小红书',       url: 'https://creator.xiaohongshu.com/', icon: 'https://www.google.com/s2/favicons?sz=64&domain=xiaohongshu.com',   description: 'xiaohongshu.com' },
 ];
 
+export const DEFAULT_NODES = [
+  { id: 'demo_node', name: '示例网站', url: 'https://www.cloudflare.com', status: 'online', latency: 24 }
+];
+
 export const DEFAULT_TODOS: TodoItem[] = [
   { id: '1', content: '欢迎使用 ApexNav 苹果风极简导航', completed: true },
   { id: '2', content: '体验 4 大搜索引擎与搜索自动联想', completed: false },
 ];
 
-export const getStoredCategories = (): Category[] => {
+// Account-Scoped Storage Methods
+export const getStoredCategories = (username?: string | null): Category[] => {
+  if (!username) return DEFAULT_CATEGORIES;
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.categories);
-    return data !== null ? JSON.parse(data) : DEFAULT_CATEGORIES;
+    const key = `apexnav_categories_${username.toLowerCase()}`;
+    const data = localStorage.getItem(key);
+    return data !== null ? JSON.parse(data) : [];
   } catch {
-    return DEFAULT_CATEGORIES;
+    return [];
   }
 };
 
-export const saveCategories = (categories: Category[]): void => {
-  localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
+export const saveCategories = (categories: Category[], username?: string | null): void => {
+  if (!username) return;
+  const key = `apexnav_categories_${username.toLowerCase()}`;
+  localStorage.setItem(key, JSON.stringify(categories));
 };
 
-export const getStoredSites = (): Site[] => {
+export const getStoredSites = (username?: string | null): Site[] => {
+  if (!username) return DEFAULT_SITES;
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.sites);
-    return data !== null ? JSON.parse(data) : DEFAULT_SITES;
+    const key = `apexnav_sites_${username.toLowerCase()}`;
+    const data = localStorage.getItem(key);
+    return data !== null ? JSON.parse(data) : [];
   } catch {
-    return DEFAULT_SITES;
+    return [];
   }
 };
 
-export const saveSites = (sites: Site[]): void => {
-  localStorage.setItem(STORAGE_KEYS.sites, JSON.stringify(sites));
+export const saveSites = (sites: Site[], username?: string | null): void => {
+  if (!username) return;
+  const key = `apexnav_sites_${username.toLowerCase()}`;
+  localStorage.setItem(key, JSON.stringify(sites));
+};
+
+export const getStoredNodes = (username?: string | null): any[] => {
+  if (!username) return DEFAULT_NODES;
+  try {
+    const key = `apexnav_nodes_${username.toLowerCase()}`;
+    const data = localStorage.getItem(key);
+    return data !== null ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveNodes = (nodes: any[], username?: string | null): void => {
+  if (!username) return;
+  const key = `apexnav_nodes_${username.toLowerCase()}`;
+  localStorage.setItem(key, JSON.stringify(nodes));
 };
 
 export const getStoredTodos = (): TodoItem[] => {
@@ -120,13 +148,19 @@ export const saveNotes = (notes: string): void => {
   localStorage.setItem(STORAGE_KEYS.notes, notes);
 };
 
-/** Cloudflare D1 Sync Helpers for Cross-Device Synchronization */
-export const syncWithD1 = async (categories: Category[], sites: Site[]): Promise<boolean> => {
+/** Account-bound Cloudflare D1 Sync Helpers */
+export const syncUserWithD1 = async (
+  username: string | null,
+  categories: Category[],
+  sites: Site[],
+  nodes: any[] = []
+): Promise<boolean> => {
+  if (!username) return false;
   try {
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categories, sites }),
+      body: JSON.stringify({ username, categories, sites, nodes }),
     });
     if (!res.ok) return false;
     const data = await res.json();
@@ -136,15 +170,21 @@ export const syncWithD1 = async (categories: Category[], sites: Site[]): Promise
   }
 };
 
-export const fetchD1Data = async (): Promise<{ categories: Category[]; sites: Site[] } | null> => {
+export const fetchUserD1Data = async (
+  username: string | null
+): Promise<{ categories: Category[]; sites: Site[]; nodes: any[] } | null> => {
+  if (!username) return null;
   try {
-    const res = await fetch('/api/data');
+    const res = await fetch(`/api/data?username=${encodeURIComponent(username.toLowerCase())}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.success && Array.isArray(data.categories) && Array.isArray(data.sites)) {
-      saveCategories(data.categories);
-      saveSites(data.sites);
-      return { categories: data.categories, sites: data.sites };
+      saveCategories(data.categories, username);
+      saveSites(data.sites, username);
+      if (Array.isArray(data.nodes)) {
+        saveNodes(data.nodes, username);
+      }
+      return { categories: data.categories, sites: data.sites, nodes: data.nodes || [] };
     }
     return null;
   } catch {

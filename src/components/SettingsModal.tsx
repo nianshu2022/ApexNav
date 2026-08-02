@@ -666,11 +666,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="p-4 rounded-3xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-800/60 flex items-center justify-between shadow-2xs">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white font-extrabold text-sm flex items-center justify-center shadow-md shrink-0">
-                    {currentUsername.charAt(0).toUpperCase()}
+                    {(currentUsername || 'Admin').charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 dark:text-white">{currentUsername}</span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">{currentUsername || 'Admin'}</span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 font-bold border border-emerald-400/30">
                         ● 当前在线
                       </span>

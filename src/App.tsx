@@ -14,8 +14,8 @@ import {
   saveSites,
   DEFAULT_CATEGORIES,
   DEFAULT_SITES,
-  fetchD1Data,
-  syncWithD1,
+  fetchUserD1Data,
+  syncUserWithD1,
 } from './utils/storage';
 
 // Official Apple Latest MacBook M3/M4 & macOS 5K Original Quality Wallpapers
@@ -35,7 +35,7 @@ const APPLE_MACOS_WALLPAPERS = [
 
 // Inner app component — uses AuthContext
 function AppInner() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, currentUsername } = useAuth();
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('apexnav_dark');
@@ -62,8 +62,8 @@ function AppInner() {
     return (localStorage.getItem('apexnav_engine') as SearchEngineKey) || 'google';
   });
 
-  const [categories, setCategories] = useState<Category[]>(getStoredCategories);
-  const [sites, setSites] = useState<Site[]>(getStoredSites);
+  const [categories, setCategories] = useState<Category[]>(() => getStoredCategories(currentUsername));
+  const [sites, setSites] = useState<Site[]>(() => getStoredSites(currentUsername));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
@@ -100,88 +100,103 @@ function AppInner() {
     localStorage.setItem('apexnav_engine', engine);
   };
 
-  // Auto-fetch from Cloudflare D1 on mount for cross-device sync
+  // Account data switching & D1 Cloud fetch
   useEffect(() => {
-    fetchD1Data().then((cloudData) => {
-      if (cloudData) {
-        setCategories(cloudData.categories);
-        setSites(cloudData.sites);
+    const loadAccountData = (un: string | null) => {
+      const userCats = getStoredCategories(un);
+      const userSites = getStoredSites(un);
+      setCategories(userCats);
+      setSites(userSites);
+
+      if (un) {
+        fetchUserD1Data(un).then((cloudData) => {
+          if (cloudData) {
+            setCategories(cloudData.categories);
+            setSites(cloudData.sites);
+          }
+        });
       }
-    });
-  }, []);
-
-  // Listen to first-time account setup event to clear demo data and start fresh
-  useEffect(() => {
-    const handleAccountSetup = () => {
-      setCategories([]);
-      setSites([]);
-      syncWithD1([], []);
     };
-    window.addEventListener('apexnav_account_setup', handleAccountSetup);
-    return () => window.removeEventListener('apexnav_account_setup', handleAccountSetup);
-  }, []);
 
-  // Category & Site handlers (admin-only actions + D1 cloud sync)
+    loadAccountData(currentUsername);
+
+    const handleAuthChange = (e: any) => {
+      const un = e.detail?.username !== undefined ? e.detail.username : currentUsername;
+      loadAccountData(un);
+    };
+
+    window.addEventListener('apexnav_auth_change', handleAuthChange);
+    return () => window.removeEventListener('apexnav_auth_change', handleAuthChange);
+  }, [currentUsername]);
+
+  // Category & Site handlers (admin-only actions + account D1 cloud sync)
   const handleAddSite = (newSiteData: Omit<Site, 'id'>) => {
+    if (!currentUsername) return;
     const site: Site = {
       ...newSiteData,
       id: `site_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     };
     const updated = [site, ...sites];
     setSites(updated);
-    saveSites(updated);
-    syncWithD1(categories, updated);
+    saveSites(updated, currentUsername);
+    syncUserWithD1(currentUsername, categories, updated);
   };
 
   const handleEditSite = (updatedSite: Site) => {
+    if (!currentUsername) return;
     const updated = sites.map((s) => (s.id === updatedSite.id ? updatedSite : s));
     setSites(updated);
-    saveSites(updated);
-    syncWithD1(categories, updated);
+    saveSites(updated, currentUsername);
+    syncUserWithD1(currentUsername, categories, updated);
   };
 
   const handleDeleteSite = (id: string) => {
+    if (!currentUsername) return;
     const updated = sites.filter((s) => s.id !== id);
     setSites(updated);
-    saveSites(updated);
-    syncWithD1(categories, updated);
+    saveSites(updated, currentUsername);
+    syncUserWithD1(currentUsername, categories, updated);
   };
 
   const handleAddCategory = (newCatData: Omit<Category, 'id'>) => {
+    if (!currentUsername) return;
     const category: Category = {
       ...newCatData,
       id: `cat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     };
     const updated = [...categories, category];
     setCategories(updated);
-    saveCategories(updated);
-    syncWithD1(updated, sites);
+    saveCategories(updated, currentUsername);
+    syncUserWithD1(currentUsername, updated, sites);
   };
 
   const handleDeleteCategory = (id: string) => {
+    if (!currentUsername) return;
     const updatedCats = categories.filter((c) => c.id !== id);
     const updatedSites = sites.filter((s) => s.category_id !== id);
     setCategories(updatedCats);
     setSites(updatedSites);
-    saveCategories(updatedCats);
-    saveSites(updatedSites);
-    syncWithD1(updatedCats, updatedSites);
+    saveCategories(updatedCats, currentUsername);
+    saveSites(updatedSites, currentUsername);
+    syncUserWithD1(currentUsername, updatedCats, updatedSites);
   };
 
   const handleImportData = (importedCats: Category[], importedSites: Site[]) => {
+    if (!currentUsername) return;
     setCategories(importedCats);
     setSites(importedSites);
-    saveCategories(importedCats);
-    saveSites(importedSites);
-    syncWithD1(importedCats, importedSites);
+    saveCategories(importedCats, currentUsername);
+    saveSites(importedSites, currentUsername);
+    syncUserWithD1(currentUsername, importedCats, importedSites);
   };
 
   const handleResetDefault = () => {
+    if (!currentUsername) return;
     setCategories(DEFAULT_CATEGORIES);
     setSites(DEFAULT_SITES);
-    saveCategories(DEFAULT_CATEGORIES);
-    saveSites(DEFAULT_SITES);
-    syncWithD1(DEFAULT_CATEGORIES, DEFAULT_SITES);
+    saveCategories(DEFAULT_CATEGORIES, currentUsername);
+    saveSites(DEFAULT_SITES, currentUsername);
+    syncUserWithD1(currentUsername, DEFAULT_CATEGORIES, DEFAULT_SITES);
   };
 
   const activeWallpaperUrl = APPLE_MACOS_WALLPAPERS[wallpaperIdx % APPLE_MACOS_WALLPAPERS.length];
