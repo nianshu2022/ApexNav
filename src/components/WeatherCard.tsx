@@ -145,48 +145,15 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
     },
   ]);
 
-  // Resilient multi-endpoint weather fetch
+  // Resilient multi-endpoint weather fetch (wttr.in -> vvhan fallback)
   const fetchWeather = async (targetCity?: string) => {
     setLoading(true);
     const target = targetCity || userCity || '兰州';
 
-    // Endpoint 1: VVHan API
+    // Endpoint 1: wttr.in (Global reliable CORS-friendly endpoint)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const cityParam = target ? `?city=${encodeURIComponent(target)}` : '';
-      const res = await fetch(`https://api.vvhan.com/api/weather${cityParam}`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.info) {
-          setCity(data.city || target);
-          const cTemp = data.info.temp ? String(data.info.temp) : '20';
-          const wType = translateWeatherDesc(data.info.type || '晴朗');
-          const hT = data.info.high ? data.info.high.replace(/[^0-9°C]/g, '') + '°C' : '23°C';
-          const lT = data.info.low ? data.info.low.replace(/[^0-9°C]/g, '') + '°C' : '18°C';
-          if (data.info.fengxiang) setWind(`${data.info.fengxiang} ${data.info.fengli || ''}`);
-
-          setForecast((prev) => [
-            { ...prev[0], currentTemp: cTemp, weatherType: wType, high: hT, low: lT },
-            prev[1],
-            prev[2],
-          ]);
-          setLoading(false);
-          return;
-        }
-      }
-    } catch {
-      // Endpoint 1 failed
-    }
-
-    // Endpoint 2: wttr.in
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
       const res = await fetch(`https://wttr.in/${encodeURIComponent(target)}?format=j1`, {
         signal: controller.signal,
       });
@@ -248,7 +215,40 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
         }
       }
     } catch {
-      // Fallback
+      // wttr.in failed, try fallback
+    }
+
+    // Endpoint 2: VVHan API (Fallback)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const cityParam = target ? `?city=${encodeURIComponent(target)}` : '';
+      const res = await fetch(`https://api.vvhan.com/api/weather${cityParam}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.info) {
+          setCity(data.city || target);
+          const cTemp = data.info.temp ? String(data.info.temp) : '20';
+          const wType = translateWeatherDesc(data.info.type || '晴朗');
+          const hT = data.info.high ? data.info.high.replace(/[^0-9°C]/g, '') + '°C' : '23°C';
+          const lT = data.info.low ? data.info.low.replace(/[^0-9°C]/g, '') + '°C' : '18°C';
+          if (data.info.fengxiang) setWind(`${data.info.fengxiang} ${data.info.fengli || ''}`);
+
+          setForecast((prev) => [
+            { ...prev[0], currentTemp: cTemp, weatherType: wType, high: hT, low: lT },
+            prev[1],
+            prev[2],
+          ]);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // VVHan API failed
     }
 
     setCity(target);
@@ -331,7 +331,7 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
         </div>
       </div>
 
-      {/* Main Temperature Display (Enlarged to 4xl/5xl for Apple Widget feel) */}
+      {/* Main Temperature Display */}
       <div
         onMouseEnter={(e) => handleMouseEnterDay(e, currentActiveDay)}
         onMouseLeave={() => setHoveredDay(null)}
@@ -351,7 +351,7 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
         </div>
       </div>
 
-      {/* 3-Day Forecast Switcher (Enlarged Day Labels & Temp Ranges) */}
+      {/* 3-Day Forecast Switcher */}
       <div className="grid grid-cols-3 gap-1.5 my-1 text-center">
         {forecast.map((fItem, idx) => {
           const isSelected = activeDayIndex === idx;
@@ -384,7 +384,7 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
         })}
       </div>
 
-      {/* Clean Footer Info (Enlarged to 12px) */}
+      {/* Clean Footer Info */}
       <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
         <div className="flex items-center space-x-1">
           <Thermometer className="w-3.5 h-3.5 text-rose-400 shrink-0" />
