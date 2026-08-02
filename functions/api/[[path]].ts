@@ -28,7 +28,7 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
     env.ADMIN_USERNAME && (env.ADMIN_PASSWORD || env.ADMIN_PASSWORD_HASH)
   );
 
-  // 1. GET /api/auth/mode: Returns authentication configuration mode
+  // 1. GET /api/auth/mode: Returns authentication & D1 status
   if (path.endsWith('/auth/mode') && request.method === 'GET') {
     return new Response(
       JSON.stringify({
@@ -79,7 +79,6 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
         } else if (env.ADMIN_PASSWORD_HASH && passwordHash && passwordHash === env.ADMIN_PASSWORD_HASH) {
           isPasswordMatch = true;
         } else if (env.ADMIN_PASSWORD && passwordHash) {
-          // Compare SHA-256 of env.ADMIN_PASSWORD
           const encoder = new TextEncoder();
           const buf = await crypto.subtle.digest('SHA-256', encoder.encode(env.ADMIN_PASSWORD));
           const expectedHash = Array.from(new Uint8Array(buf))
@@ -198,7 +197,10 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
     if (request.method === 'GET') {
       const username = url.searchParams.get('username')?.trim().toLowerCase();
       if (!username || !env.DB) {
-        return new Response(JSON.stringify({ success: true, categories: null, sites: null, nodes: null }), { headers });
+        return new Response(
+          JSON.stringify({ success: true, isD1Bound: Boolean(env.DB), categories: null, sites: null, nodes: null }),
+          { headers }
+        );
       }
 
       const row = await env.DB.prepare('SELECT categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?')
@@ -206,12 +208,16 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
         .first();
 
       if (!row) {
-        return new Response(JSON.stringify({ success: true, isNewUser: true, categories: [], sites: [], nodes: [] }), { headers });
+        return new Response(
+          JSON.stringify({ success: true, isD1Bound: true, isNewUser: true, categories: [], sites: [], nodes: [] }),
+          { headers }
+        );
       }
 
       return new Response(
         JSON.stringify({
           success: true,
+          isD1Bound: true,
           isNewUser: false,
           categories: JSON.parse(row.categories_json),
           sites: JSON.parse(row.sites_json),
@@ -221,10 +227,10 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
       );
     }
 
-    // 5. POST DATA: POST /api/data
+    // 5. POST DATA: POST /api/data (Uses robust SELECT -> UPDATE / INSERT for cross-device D1 sync)
     if (request.method === 'POST') {
       if (!env.DB) {
-        return new Response(JSON.stringify({ success: true, message: 'Saved locally' }), { headers });
+        return new Response(JSON.stringify({ success: true, isD1Bound: false, message: 'Saved locally (D1 not bound)' }), { headers });
       }
 
       const body = await request.json();
@@ -235,19 +241,33 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
         return new Response(JSON.stringify({ success: false, message: 'Invalid payload' }), { headers, status: 400 });
       }
 
-      await env.DB.prepare(`
-        INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json, updated_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(username) DO UPDATE SET
-          categories_json = excluded.categories_json,
-          sites_json = excluded.sites_json,
-          nodes_json = excluded.nodes_json,
-          updated_at = CURRENT_TIMESTAMP
-      `)
-        .bind(cleanUn, JSON.stringify(categories), JSON.stringify(sites), JSON.stringify(nodes))
-        .run();
+      const nodesData = Array.isArray(nodes) ? nodes : [];
+      const catsJson = JSON.stringify(categories);
+      const sitesJson = JSON.stringify(sites);
+      const nodesJson = JSON.stringify(nodesData);
 
-      return new Response(JSON.stringify({ success: true, message: 'Synced to D1' }), { headers });
+      const existing = await env.DB.prepare('SELECT username FROM user_nav_data WHERE username = ?')
+        .bind(cleanUn)
+        .first();
+
+      if (existing) {
+        await env.DB.prepare(`
+          UPDATE user_nav_data
+          SET categories_json = ?, sites_json = ?, nodes_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE username = ?
+        `)
+          .bind(catsJson, sitesJson, nodesJson, cleanUn)
+          .run();
+      } else {
+        await env.DB.prepare(`
+          INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json, updated_at)
+          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `)
+          .bind(cleanUn, catsJson, sitesJson, nodesJson)
+          .run();
+      }
+
+      return new Response(JSON.stringify({ success: true, isD1Bound: true, message: `Synced ${cleanUn} to Cloudflare D1` }), { headers });
     }
 
     return new Response(JSON.stringify({ success: false, message: 'Not found' }), { headers, status: 404 });
