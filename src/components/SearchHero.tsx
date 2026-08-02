@@ -126,11 +126,13 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
   const hasResults = matchedSites.length > 0 || suggestions.length > 0;
 
   return (
-    <section className="w-full max-w-4xl mx-auto px-4 my-4 sm:my-6 flex flex-col items-center relative z-10">
+    <section className={`w-full max-w-4xl mx-auto px-4 my-4 sm:my-6 flex flex-col items-center relative transition-all duration-200 ${
+      isFocused ? 'z-40' : 'z-20'
+    }`}>
       {/* Main Integrated Search Bar Container */}
-      <div ref={containerRef} className="w-full relative z-10">
+      <div ref={containerRef} className="w-full relative z-40">
         <div
-          className={`w-full rounded-2xl sm:rounded-3xl bg-white/95 dark:bg-slate-900/95 border transition-all duration-300 shadow-xl glass-panel flex items-center p-2 sm:p-2.5 relative z-10 ${
+          className={`w-full rounded-2xl sm:rounded-3xl bg-white/95 dark:bg-slate-900/95 border transition-all duration-300 shadow-xl glass-panel flex items-center p-2 sm:p-2.5 relative z-40 ${
             isFocused
               ? 'border-indigo-500/80 dark:border-indigo-400/80 ring-4 ring-indigo-500/15 shadow-indigo-500/10'
               : 'border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700'
@@ -224,9 +226,9 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
           </button>
         </div>
 
-        {/* Dynamic Suggestions & Matched Local Bookmarks Dropdown */}
+        {/* Dynamic Suggestions & Matched Local Bookmarks Dropdown (100% Opaque Solid BG, High Z-Index) */}
         {isFocused && hasResults && (
-          <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white/98 dark:bg-slate-900/98 border border-slate-200/80 dark:border-slate-800/80 shadow-2xl glass-panel overflow-hidden z-40 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 shadow-2xl overflow-hidden z-[60] animate-in fade-in slide-in-from-top-2 duration-200">
             {/* Matched Local Bookmarks */}
             {matchedSites.length > 0 && (
               <div className="p-2 border-b border-slate-100 dark:border-slate-800">
