@@ -245,9 +245,9 @@ function AppInner() {
           </>
         ) : (
           <>
-            <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 dark:from-indigo-500/35 dark:to-purple-500/35 blur-3xl animate-float-glow" />
-            <div className="absolute top-1/3 -right-40 w-96 h-96 rounded-full bg-gradient-to-br from-pink-500/20 to-rose-500/20 dark:from-violet-500/30 dark:to-fuchsia-500/30 blur-3xl animate-float-glow style-delay-2" />
-            <div className="absolute -bottom-40 left-1/3 w-96 h-96 rounded-full bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 dark:from-cyan-500/25 dark:to-blue-500/30 blur-3xl animate-float-glow style-delay-4" />
+            <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 dark:from-indigo-500/35 dark:to-purple-500/35 blur-3xl animate-float-slow pointer-events-none" />
+            <div className="absolute top-1/3 -right-40 w-96 h-96 rounded-full bg-gradient-to-br from-pink-500/20 to-rose-500/20 dark:from-violet-500/30 dark:to-fuchsia-500/30 blur-3xl animate-float-reverse pointer-events-none" />
+            <div className="absolute -bottom-40 left-1/3 w-96 h-96 rounded-full bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 dark:from-cyan-500/25 dark:to-blue-500/30 blur-3xl animate-float-slow pointer-events-none" />
           </>
         )}
       </div>

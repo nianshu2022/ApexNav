@@ -143,16 +143,16 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
               <div key={cat.id} className="relative group/cat overflow-visible">
                 <button
                   onClick={() => setActiveCategoryId(cat.id)}
-                  className={`px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                  className={`px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl text-xs sm:text-sm font-semibold transition-all duration-300 ease-out flex items-center gap-2 cursor-pointer ${
                     isSelected
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-md scale-[1.02]'
-                      : 'bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 shadow-xs'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-lg shadow-indigo-500/10 scale-[1.03]'
+                      : 'bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:scale-[1.02] border border-slate-200/60 dark:border-slate-700/60 shadow-xs'
                   }`}
                 >
-                  <span>{cat.icon}</span>
+                  <span className="transition-transform duration-300 group-hover:scale-125">{cat.icon}</span>
                   <span>{cat.name}</span>
                   <span
-                    className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono ${
+                    className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono font-bold transition-all ${
                       isSelected
                         ? 'bg-white/20 text-white dark:bg-slate-900/20 dark:text-slate-900'
                         : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'
@@ -171,7 +171,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
           <div className="flex items-center space-x-2 shrink-0">
             <button
               onClick={() => setIsCategoryModalOpen(true)}
-              className="px-3 py-2 rounded-2xl bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60 hover:bg-white dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+              className="px-3 py-2 rounded-2xl bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60 hover:bg-white dark:hover:bg-slate-800 hover:scale-105 active:scale-95 text-xs font-semibold flex items-center gap-1 transition-all shadow-xs cursor-pointer"
               title="添加分类"
             >
               <Layers className="w-3.5 h-3.5" />
@@ -183,14 +183,14 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
               className="px-3.5 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 shadow-md shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>新增网址</span>
+              <span className="hidden sm:inline">新增网址</span>
             </button>
           </div>
         )}
       </div>
 
       {/* Bookmarks Grid (Next-Gen Apple Frosted Glass Pill Cards) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
         {categories.length === 0 ? (
           <div className="col-span-full py-16 text-center text-slate-400 dark:text-slate-500">
             <Layers className="w-12 h-12 mx-auto mb-3 opacity-40 animate-bounce text-indigo-500" />
@@ -210,7 +210,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
             )}
           </div>
         ) : filteredSites.length === 0 ? (
-          <div className="col-span-full py-16 text-center text-slate-400 dark:text-slate-500">
+          <div className="col-span-full py-12 text-center text-slate-400 dark:text-slate-500 glass-card rounded-3xl">
             <Globe className="w-12 h-12 mx-auto mb-3 opacity-40 animate-bounce" />
             <p className="text-sm font-medium">当前分类下暂无网址</p>
             {isAdmin && (
@@ -226,7 +226,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
           filteredSites.map((site) => (
             <div
               key={site.id}
-              className="group relative px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-white/80 dark:bg-slate-800/90 border border-slate-200/60 dark:border-slate-600/50 shadow-sm hover:shadow-md hover:border-indigo-500/40 dark:hover:border-indigo-400/50 dark:shadow-slate-900/50 glass-card transition-all duration-200 hover:-translate-y-1 flex items-center min-w-0"
+              className="group relative px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-white/80 dark:bg-slate-800/90 border border-slate-200/60 dark:border-slate-600/50 shadow-xs hover:shadow-xl hover:border-indigo-500/40 dark:hover:border-indigo-400/50 dark:shadow-slate-900/50 glass-card transition-all duration-300 ease-out hover:-translate-y-1.5 flex items-center min-w-0"
             >
               {/* Left Side: Icon + Text Clickable Link */}
               <a
@@ -236,7 +236,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                 className="flex items-center gap-3 min-w-0 w-full group/link"
               >
                 {/* Icon Badge Container */}
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-600/80 shadow-2xs group-hover/link:scale-105 transition-transform p-1.5">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-600/80 shadow-2xs group-hover/link:scale-110 group-hover/link:rotate-3 transition-transform duration-300 ease-out p-1.5">
                   {site.icon ? (
                     <img
                       src={site.icon}
@@ -259,10 +259,10 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                 {/* Title and URL/Description */}
                 <div className="min-w-0 flex-1 pr-1">
                   <div className="flex items-center gap-1">
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover/link:text-indigo-600 dark:group-hover/link:text-indigo-400 truncate leading-tight">
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover/link:text-indigo-600 dark:group-hover/link:text-indigo-400 truncate leading-tight transition-colors">
                       {site.name}
                     </h3>
-                    <ExternalLink className="w-3 h-3 text-slate-400 opacity-0 group-hover/link:opacity-100 transition-opacity shrink-0" />
+                    <ExternalLink className="w-3 h-3 text-slate-400 opacity-0 group-hover/link:opacity-100 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-all shrink-0" />
                   </div>
                   <p className="text-[11px] font-mono text-slate-500 dark:text-slate-300 truncate leading-tight mt-0.5 group-hover/link:text-slate-700 dark:group-hover/link:text-slate-100">
                     {site.description || site.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
