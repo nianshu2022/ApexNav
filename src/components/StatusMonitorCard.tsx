@@ -142,8 +142,8 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
         </div>
       </div>
 
-      {/* Node List */}
-      <div className="space-y-1.5 my-1">
+      {/* Node List (Top-aligned flex-1 container) */}
+      <div className="flex-1 flex flex-col justify-start space-y-1.5 my-1">
         {nodes.length === 0 ? (
           <div className="py-4 text-center text-xs text-slate-400 dark:text-slate-500 space-y-2">
             <Globe className="w-6 h-6 mx-auto opacity-40" />
