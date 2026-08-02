@@ -16,6 +16,7 @@ import {
   DEFAULT_SITES,
   fetchUserD1Data,
   syncUserWithD1,
+  getStoredNodes,
 } from './utils/storage';
 
 // Official Apple Latest MacBook M3/M4 & macOS 5K Original Quality Wallpapers
@@ -110,9 +111,12 @@ function AppInner() {
 
       if (un) {
         fetchUserD1Data(un).then((cloudData) => {
-          if (cloudData) {
+          if (cloudData && Array.isArray(cloudData.categories) && cloudData.categories.length > 0) {
             setCategories(cloudData.categories);
-            setSites(cloudData.sites);
+            if (Array.isArray(cloudData.sites)) setSites(cloudData.sites);
+          } else if (userCats.length > 0 || userSites.length > 0) {
+            // Auto-sync local account data to Cloudflare D1
+            syncUserWithD1(un, userCats, userSites, getStoredNodes(un));
           }
         });
       }

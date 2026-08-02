@@ -129,10 +129,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             apiSuccess = true;
             const authenticatedUser = data.user || cleanUn;
 
-            // Hydrate local storage with Cloudflare / D1 user data
-            if (Array.isArray(data.categories)) saveCategories(data.categories, authenticatedUser);
-            if (Array.isArray(data.sites)) saveSites(data.sites, authenticatedUser);
-            if (Array.isArray(data.nodes)) saveNodes(data.nodes, authenticatedUser);
+            // Hydrate local storage with Cloudflare / D1 user data ONLY if non-empty
+            if (Array.isArray(data.categories) && data.categories.length > 0) {
+              saveCategories(data.categories, authenticatedUser);
+            }
+            if (Array.isArray(data.sites) && data.sites.length > 0) {
+              saveSites(data.sites, authenticatedUser);
+            }
+            if (Array.isArray(data.nodes) && data.nodes.length > 0) {
+              saveNodes(data.nodes, authenticatedUser);
+            }
 
             localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${authenticatedUser.toLowerCase()}`, await hash(authenticatedUser.toLowerCase()));
             localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${authenticatedUser.toLowerCase()}`, inputPwHash);
