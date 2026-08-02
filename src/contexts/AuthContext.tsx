@@ -65,11 +65,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, unHash);
     localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, pwHash);
     localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
-
-    // Initialize fresh empty workspace for the new account
-    saveCategories([], cleanUn);
-    saveSites([], cleanUn);
-    saveNodes([], cleanUn);
+    localStorage.setItem('apexnav_auth_username', unHash);
+    localStorage.setItem('apexnav_auth_password', pwHash);
 
     // Attempt D1 Register API
     try {
@@ -127,17 +124,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const storedUnHash = localStorage.getItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`);
         const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`);
 
-        const legacyUnHash = localStorage.getItem('apexnav_auth_username');
         const legacyPwHash = localStorage.getItem('apexnav_auth_password');
 
         let isValid = false;
         if (storedUnHash && storedPwHash) {
           if (inputUnHash === storedUnHash && inputPwHash === storedPwHash) isValid = true;
-        } else if (legacyUnHash && legacyPwHash) {
-          if (inputUnHash === legacyUnHash && inputPwHash === legacyPwHash) {
+        } else if (legacyPwHash) {
+          // If legacy password matches, validate and migrate!
+          if (inputPwHash === legacyPwHash) {
             isValid = true;
-            localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, legacyUnHash);
-            localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, legacyPwHash);
+            localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, inputUnHash);
+            localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, inputPwHash);
           }
         }
 
@@ -204,13 +201,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!d1Handled) {
-        const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${currentUsername.toLowerCase()}`);
+        const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${currentUsername.toLowerCase()}`) || localStorage.getItem('apexnav_auth_password');
         if (!storedPwHash || oldPwHash !== storedPwHash) return 'wrong_password';
       }
 
       localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanNewUn.toLowerCase()}`, newUnHash);
       localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanNewUn.toLowerCase()}`, newPwHash);
       localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanNewUn);
+      localStorage.setItem('apexnav_auth_username', newUnHash);
+      localStorage.setItem('apexnav_auth_password', newPwHash);
 
       setCurrentUsername(cleanNewUn);
       window.dispatchEvent(new CustomEvent('apexnav_auth_change', { detail: { username: cleanNewUn } }));

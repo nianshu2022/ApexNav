@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, X, LogIn, ShieldPlus } from 'lucide-react';
+import { Eye, EyeOff, X, LogIn, ShieldPlus, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PinModalProps {
@@ -10,6 +10,7 @@ interface PinModalProps {
 
 export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const { login, needsSetup, setupAccount } = useAuth();
+  const [isSetupMode, setIsSetupMode] = useState(needsSetup);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,6 +21,7 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
 
   useEffect(() => {
     if (isOpen) {
+      setIsSetupMode(needsSetup);
       setUsername('');
       setPassword('');
       setConfirmPassword('');
@@ -27,13 +29,13 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
       setShowPassword(false);
       setTimeout(() => usernameRef.current?.focus(), 150);
     }
-  }, [isOpen]);
+  }, [isOpen, needsSetup]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password.trim() || loading) return;
 
-    if (needsSetup) {
+    if (isSetupMode) {
       if (username.trim().length < 2) {
         setError('用户名至少需要 2 个字符');
         return;
@@ -83,14 +85,14 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
         <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-purple-500/15 dark:from-indigo-500/25 dark:to-purple-500/25 flex items-center justify-center border border-indigo-200/40 dark:border-indigo-700/40">
-              {needsSetup ? <ShieldPlus className="w-5 h-5 text-indigo-500" /> : <LogIn className="w-5 h-5 text-indigo-500" />}
+              {isSetupMode ? <ShieldPlus className="w-5 h-5 text-indigo-500" /> : <LogIn className="w-5 h-5 text-indigo-500" />}
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                {needsSetup ? '设置管理账号' : '登录'}
+                {isSetupMode ? '设置/注册管理账号' : '登录'}
               </h2>
               <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                {needsSetup ? '首次使用请自定义账号密码' : '登录后可编辑书签与数据'}
+                {isSetupMode ? '首次或重新自定义账号密码' : '登录后可编辑书签与数据'}
               </p>
             </div>
           </div>
@@ -114,7 +116,7 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
               type="text"
               value={username}
               onChange={(e) => { setUsername(e.target.value); setError(''); }}
-              placeholder={needsSetup ? '自定义用户名' : '请输入用户名'}
+              placeholder={isSetupMode ? '自定义用户名（如 nianshu）' : '请输入用户名'}
               autoComplete="username"
               className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
             />
@@ -130,7 +132,7 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                placeholder={needsSetup ? '自定义密码（至少4位）' : '请输入密码'}
+                placeholder={isSetupMode ? '自定义密码（至少4位）' : '请输入密码'}
                 autoComplete="current-password"
                 className="w-full px-4 py-3 pr-12 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
               />
@@ -145,7 +147,7 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
           </div>
 
           {/* Confirm Password (if setup) */}
-          {needsSetup && (
+          {isSetupMode && (
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
                 确认密码
@@ -171,12 +173,34 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
           {/* Submit */}
           <button
             type="submit"
-            disabled={!username.trim() || !password.trim() || (needsSetup && !confirmPassword.trim()) || loading}
+            disabled={!username.trim() || !password.trim() || (isSetupMode && !confirmPassword.trim()) || loading}
             className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-600/25 hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 mt-1"
           >
-            {needsSetup ? <ShieldPlus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-            {loading ? '处理中...' : needsSetup ? '完成设置并登录' : '登录'}
+            {isSetupMode ? <ShieldPlus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+            {loading ? '处理中...' : isSetupMode ? '完成设置并登录' : '登录'}
           </button>
+
+          {/* Footer toggle mode */}
+          <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+            {isSetupMode ? (
+              <button
+                type="button"
+                onClick={() => { setIsSetupMode(false); setError(''); }}
+                className="text-xs text-slate-500 dark:text-slate-400 font-medium hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+              >
+                已有账号？点击切换为<b>登录</b>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setIsSetupMode(true); setError(''); }}
+                className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer flex items-center justify-center gap-1 mx-auto"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                忘记密码 / 设置新账号密码
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </div>
