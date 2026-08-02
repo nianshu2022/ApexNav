@@ -66,6 +66,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, pwHash);
     localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
 
+    // Initialize fresh empty workspace for the new account
+    saveCategories([], cleanUn);
+    saveSites([], cleanUn);
+    saveNodes([], cleanUn);
+
     // Attempt D1 Register API
     try {
       await fetch('/api/auth/register', {

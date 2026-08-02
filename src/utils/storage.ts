@@ -9,7 +9,7 @@ const STORAGE_KEYS = {
 
 // ─────────────────────────────────────────────────────────
 // Default demo data (generic, open-source friendly)
-// High-res 128px transparent favicons for crisp Apple-style rendering.
+// Preserved for unauthenticated guests. Never deleted!
 // ─────────────────────────────────────────────────────────
 
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -81,7 +81,10 @@ export const getStoredCategories = (username?: string | null): Category[] => {
   try {
     const key = `apexnav_categories_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
-    return data !== null ? JSON.parse(data) : [];
+    if (data !== null) return JSON.parse(data);
+    // First time login for this account: initialize empty workspace
+    saveCategories([], username);
+    return [];
   } catch {
     return [];
   }
@@ -98,7 +101,10 @@ export const getStoredSites = (username?: string | null): Site[] => {
   try {
     const key = `apexnav_sites_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
-    return data !== null ? JSON.parse(data) : [];
+    if (data !== null) return JSON.parse(data);
+    // First time login for this account: initialize empty workspace
+    saveSites([], username);
+    return [];
   } catch {
     return [];
   }
@@ -115,7 +121,10 @@ export const getStoredNodes = (username?: string | null): any[] => {
   try {
     const key = `apexnav_nodes_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
-    return data !== null ? JSON.parse(data) : [];
+    if (data !== null) return JSON.parse(data);
+    // First time login for this account: initialize empty workspace
+    saveNodes([], username);
+    return [];
   } catch {
     return [];
   }
