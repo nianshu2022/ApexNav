@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [needsSetup] = useState<boolean>(false);
 
-  /** Register or setup an account with username + password (D1 + LocalStorage fallback) */
+  /** Register or setup an account with username + password */
   const setupAccount = useCallback(async (username: string, password: string) => {
     const cleanUn = username.trim();
     const unHash = await hash(cleanUn.toLowerCase());
@@ -83,7 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ username: cleanUn, passwordHash: pwHash }),
       });
     } catch {
-      /* Standalone LocalStorage fallback */
+      /* Local fallback */
     }
 
     sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
@@ -100,44 +100,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const inputUnHash = await hash(cleanUn.toLowerCase());
       const inputPwHash = await hash(password);
 
-      // Attempt D1 Login API first
-      let d1Success = false;
+      // Attempt Cloudflare Function / D1 Login API (Passes both raw password and hash for Cloudflare Env Secret check)
+      let apiSuccess = false;
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: cleanUn, passwordHash: inputPwHash }),
+          body: JSON.stringify({ username: cleanUn, password, passwordHash: inputPwHash }),
         });
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
-            d1Success = true;
-            // Hydrate local storage with D1 user data
-            if (Array.isArray(data.categories)) saveCategories(data.categories, cleanUn);
-            if (Array.isArray(data.sites)) saveSites(data.sites, cleanUn);
-            if (Array.isArray(data.nodes)) saveNodes(data.nodes, cleanUn);
+            apiSuccess = true;
+            const authenticatedUser = data.user || cleanUn;
 
-            localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, inputUnHash);
-            localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, inputPwHash);
-            localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
+            // Hydrate local storage with Cloudflare / D1 user data
+            if (Array.isArray(data.categories)) saveCategories(data.categories, authenticatedUser);
+            if (Array.isArray(data.sites)) saveSites(data.sites, authenticatedUser);
+            if (Array.isArray(data.nodes)) saveNodes(data.nodes, authenticatedUser);
+
+            localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${authenticatedUser.toLowerCase()}`, await hash(authenticatedUser.toLowerCase()));
+            localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${authenticatedUser.toLowerCase()}`, inputPwHash);
+            localStorage.setItem(STORAGE_KEY_DISPLAY_UN, authenticatedUser);
+
+            sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
+            setCurrentUsername(authenticatedUser);
+            setIsAdmin(true);
+
+            window.dispatchEvent(new CustomEvent('apexnav_auth_change', { detail: { username: authenticatedUser } }));
+            return true;
           }
         }
       } catch {
-        /* D1 API offline / not bound -> fallback to local storage */
+        /* API offline / not bound -> fallback to local storage */
       }
 
-      if (!d1Success) {
+      if (!apiSuccess) {
         // LocalStorage authentication fallback
         const storedUnHash = localStorage.getItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`);
         const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`);
-
         const legacyPwHash = localStorage.getItem('apexnav_auth_password');
 
         let isValid = false;
         if (storedUnHash && storedPwHash) {
           if (inputUnHash === storedUnHash && inputPwHash === storedPwHash) isValid = true;
         } else if (legacyPwHash) {
-          // If legacy password matches, validate and migrate!
           if (inputPwHash === legacyPwHash) {
             isValid = true;
             localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, inputUnHash);

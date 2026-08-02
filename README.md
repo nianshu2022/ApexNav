@@ -101,7 +101,19 @@ npm run build
 2. 进入你的 Pages 项目 -> **Settings** -> **Functions** -> **D1 database bindings** -> 点击 **Add binding**：
    - **Variable name**: `DB`
    - **D1 database**: 选择刚才创建的 `apexnav-db`
-3. 保存并重新部署项目即可！以后在手机或电脑修改书签，所有设备均会自动同步。
+---
+
+## 🔒 终极安全认证：通过 Cloudflare 环境变量配置管理员账号密码
+
+除了在前端或数据库中注册之外，**最高级别的安全推荐**是将管理员账号与密码直接托管在 **Cloudflare Pages 环境变量 / 加密秘钥 (Environment Variables & Secrets)** 中，由 Cloudflare 云端边缘节点进行服务端安全校验：
+
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/) -> **Workers & Pages** -> 点击你的 `apexnav` 项目。
+2. 导航至 **Settings** -> **Environment variables** -> 点击 **Add variable**（环境选择 *Production* 及 *Preview*）：
+   - 变量 1 名称：**`ADMIN_USERNAME`** ➡️ 值填你的管理员用户名（例如 `nianshu`）
+   - 变量 2 名称：**`ADMIN_PASSWORD`** ➡️ 点击右侧 **Encrypt (加密秘钥/Secret)**，值填你的专属密码（例如 `YourStrongPassword123`）
+3. 保存设置，并在 **Deployments** 中点击 **Retry deployment**（重新部署）即可生效！
+
+> 🛡️ **终极安全保障**：管理员账号密码锁定在 Cloudflare 官方云端，前端无法篡改，公网也禁止随意注册，所有登录校验均在服务端边缘计算中加密完成！
 
 ---
 
