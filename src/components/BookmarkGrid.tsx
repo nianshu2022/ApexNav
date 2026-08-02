@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Globe, ExternalLink, Layers, X } from 'lucide-react';
 import type { Category, Site } from '../types';
 
@@ -24,6 +24,18 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
   const [activeCategoryId, setActiveCategoryId] = useState<string>(() => {
     return categories.length > 0 ? categories[0].id : '';
   });
+
+  // Auto-sync activeCategoryId when categories list changes or category is deleted/added
+  useEffect(() => {
+    if (categories.length > 0) {
+      const exists = categories.some((c) => c.id === activeCategoryId);
+      if (!exists) {
+        setActiveCategoryId(categories[0].id);
+      }
+    } else {
+      setActiveCategoryId('');
+    }
+  }, [categories, activeCategoryId]);
 
   const [isSiteModalOpen, setIsSiteModalOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);

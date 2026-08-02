@@ -174,6 +174,14 @@ function AppInner() {
     syncUserWithD1(currentUsername, updated, sites);
   };
 
+  const handleEditCategory = (updatedCat: Category) => {
+    if (!currentUsername) return;
+    const updated = categories.map((c) => (c.id === updatedCat.id ? updatedCat : c));
+    setCategories(updated);
+    saveCategories(updated, currentUsername);
+    syncUserWithD1(currentUsername, updated, sites);
+  };
+
   const handleDeleteCategory = (id: string) => {
     if (!currentUsername) return;
     const updatedCats = categories.filter((c) => c.id !== id);
@@ -303,6 +311,7 @@ function AppInner() {
         onEditSite={handleEditSite}
         onDeleteSite={handleDeleteSite}
         onAddCategory={handleAddCategory}
+        onEditCategory={handleEditCategory}
         onDeleteCategory={handleDeleteCategory}
       />
     </div>

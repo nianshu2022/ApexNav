@@ -18,6 +18,7 @@ interface SettingsModalProps {
   onEditSite: (site: Site) => void;
   onDeleteSite: (id: string) => void;
   onAddCategory: (category: Omit<Category, 'id'>) => void;
+  onEditCategory?: (category: Category) => void;
   onDeleteCategory: (id: string) => void;
 }
 
@@ -445,26 +446,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-700 font-mono font-bold text-slate-500 dark:text-slate-400">
                           {catSiteCount}
                         </span>
-                        {categories.length > 1 && (
-                          <button
-                            onClick={() => {
-                              askConfirm(
-                                '删除分类',
-                                `确认要删除分类「${cat.name}」及其包含的所有 ${catSiteCount} 个网址吗？`,
-                                () => {
-                                  onDeleteCategory(cat.id);
-                                  showMsg(`已删除分类「${cat.name}」`, 'success');
-                                },
-                                true,
-                                '确认删除'
-                              );
-                            }}
-                            className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer ml-0.5"
-                            title="删除分类"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => {
+                            askConfirm(
+                              '删除分类',
+                              `确认要删除分类「${cat.name}」及其包含的所有 ${catSiteCount} 个网址吗？`,
+                              () => {
+                                onDeleteCategory(cat.id);
+                                showMsg(`已删除分类「${cat.name}」`, 'success');
+                              },
+                              true,
+                              '确认删除'
+                            );
+                          }}
+                          className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer ml-0.5"
+                          title="删除分类"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     );
                   })}
