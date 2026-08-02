@@ -116,7 +116,7 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
               type="text"
               value={username}
               onChange={(e) => { setUsername(e.target.value); setError(''); }}
-              placeholder={isSetupMode ? '自定义用户名（如 nianshu）' : '请输入用户名'}
+              placeholder={isSetupMode ? '请输入自定义用户名' : '请输入用户名'}
               autoComplete="username"
               className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
             />
