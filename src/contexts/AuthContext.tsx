@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { saveCategories, saveSites, saveNodes } from '../utils/storage';
 
 const STORAGE_KEY_PW_PREFIX = 'apexnav_auth_pw_';
 const STORAGE_KEY_UN_PREFIX = 'apexnav_auth_un_';
@@ -54,15 +55,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [needsSetup] = useState<boolean>(false);
 
-  /** Create or register an account with username + password */
+  /** Register or setup an account with username + password (D1 + LocalStorage fallback) */
   const setupAccount = useCallback(async (username: string, password: string) => {
     const cleanUn = username.trim();
     const unHash = await hash(cleanUn.toLowerCase());
     const pwHash = await hash(password);
 
+    // Save in LocalStorage
     localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, unHash);
     localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, pwHash);
     localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
+
+    // Attempt D1 Register API
+    try {
+      await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: cleanUn, passwordHash: pwHash }),
+      });
+    } catch {
+      /* Standalone LocalStorage fallback */
+    }
 
     sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
     setCurrentUsername(cleanUn);
@@ -78,26 +91,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const inputUnHash = await hash(cleanUn.toLowerCase());
       const inputPwHash = await hash(password);
 
-      const storedUnHash = localStorage.getItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`);
-      const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`);
+      // Attempt D1 Login API first
+      let d1Success = false;
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: cleanUn, passwordHash: inputPwHash }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            d1Success = true;
+            // Hydrate local storage with D1 user data
+            if (Array.isArray(data.categories)) saveCategories(data.categories, cleanUn);
+            if (Array.isArray(data.sites)) saveSites(data.sites, cleanUn);
+            if (Array.isArray(data.nodes)) saveNodes(data.nodes, cleanUn);
 
-      // Legacy single-account fallback check
-      const legacyUnHash = localStorage.getItem('apexnav_auth_username');
-      const legacyPwHash = localStorage.getItem('apexnav_auth_password');
-
-      let isValid = false;
-      if (storedUnHash && storedPwHash) {
-        if (inputUnHash === storedUnHash && inputPwHash === storedPwHash) isValid = true;
-      } else if (legacyUnHash && legacyPwHash) {
-        if (inputUnHash === legacyUnHash && inputPwHash === legacyPwHash) {
-          isValid = true;
-          // Migrate legacy account
-          localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, legacyUnHash);
-          localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, legacyPwHash);
+            localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, inputUnHash);
+            localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, inputPwHash);
+            localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
+          }
         }
+      } catch {
+        /* D1 API offline / not bound -> fallback to local storage */
       }
 
-      if (!isValid) return false;
+      if (!d1Success) {
+        // LocalStorage authentication fallback
+        const storedUnHash = localStorage.getItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`);
+        const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`);
+
+        const legacyUnHash = localStorage.getItem('apexnav_auth_username');
+        const legacyPwHash = localStorage.getItem('apexnav_auth_password');
+
+        let isValid = false;
+        if (storedUnHash && storedPwHash) {
+          if (inputUnHash === storedUnHash && inputPwHash === storedPwHash) isValid = true;
+        } else if (legacyUnHash && legacyPwHash) {
+          if (inputUnHash === legacyUnHash && inputPwHash === legacyPwHash) {
+            isValid = true;
+            localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanUn.toLowerCase()}`, legacyUnHash);
+            localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanUn.toLowerCase()}`, legacyPwHash);
+          }
+        }
+
+        if (!isValid) return false;
+      }
 
       localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
       sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
@@ -129,13 +169,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (!currentUsername) return 'error';
       const oldPwHash = await hash(oldPassword);
-      const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${currentUsername.toLowerCase()}`);
-
-      if (!storedPwHash || oldPwHash !== storedPwHash) return 'wrong_password';
-
       const cleanNewUn = newUsername.trim();
       const newUnHash = await hash(cleanNewUn.toLowerCase());
       const newPwHash = await hash(newPassword);
+
+      // Attempt D1 Change Password API
+      let d1Handled = false;
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: currentUsername,
+            oldPasswordHash: oldPwHash,
+            newUsername: cleanNewUn,
+            newPasswordHash: newPwHash,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            d1Handled = true;
+          } else if (data.message === '当前密码错误') {
+            return 'wrong_password';
+          }
+        }
+      } catch {
+        /* D1 API offline */
+      }
+
+      if (!d1Handled) {
+        const storedPwHash = localStorage.getItem(`${STORAGE_KEY_PW_PREFIX}${currentUsername.toLowerCase()}`);
+        if (!storedPwHash || oldPwHash !== storedPwHash) return 'wrong_password';
+      }
 
       localStorage.setItem(`${STORAGE_KEY_UN_PREFIX}${cleanNewUn.toLowerCase()}`, newUnHash);
       localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${cleanNewUn.toLowerCase()}`, newPwHash);
