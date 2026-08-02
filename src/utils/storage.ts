@@ -9,7 +9,7 @@ const STORAGE_KEYS = {
 
 // ─────────────────────────────────────────────────────────
 // Default demo data (generic, open-source friendly)
-// Preserved for unauthenticated guests. Never deleted!
+// Used for unauthenticated guests AND as starter template for new accounts.
 // ─────────────────────────────────────────────────────────
 
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -82,11 +82,11 @@ export const getStoredCategories = (username?: string | null): Category[] => {
     const key = `apexnav_categories_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
-    // First time login for this account: initialize empty workspace
-    saveCategories([], username);
-    return [];
+    // Initialize new account with default categories template
+    saveCategories(DEFAULT_CATEGORIES, username);
+    return DEFAULT_CATEGORIES;
   } catch {
-    return [];
+    return DEFAULT_CATEGORIES;
   }
 };
 
@@ -102,11 +102,11 @@ export const getStoredSites = (username?: string | null): Site[] => {
     const key = `apexnav_sites_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
-    // First time login for this account: initialize empty workspace
-    saveSites([], username);
-    return [];
+    // Initialize new account with default sites template
+    saveSites(DEFAULT_SITES, username);
+    return DEFAULT_SITES;
   } catch {
-    return [];
+    return DEFAULT_SITES;
   }
 };
 
@@ -122,11 +122,11 @@ export const getStoredNodes = (username?: string | null): any[] => {
     const key = `apexnav_nodes_${username.toLowerCase()}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
-    // First time login for this account: initialize empty workspace
-    saveNodes([], username);
-    return [];
+    // Initialize new account with default nodes template
+    saveNodes(DEFAULT_NODES, username);
+    return DEFAULT_NODES;
   } catch {
-    return [];
+    return DEFAULT_NODES;
   }
 };
 
