@@ -21,10 +21,10 @@ interface StatusMonitorCardProps {
 export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = false }) => {
   const [nodes, setNodes] = useState<MonitoredNode[]>(() => {
     const saved = localStorage.getItem('apexnav_monitored_nodes_v4');
-    if (saved) {
+    if (saved !== null) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       } catch { /* Fallback */ }
     }
     return DEFAULT_NODES;
@@ -34,6 +34,15 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [newNodeName, setNewNodeName] = useState('');
   const [newNodeUrl, setNewNodeUrl] = useState('');
+
+  // Listen to first-time account setup event to clear demo nodes
+  useEffect(() => {
+    const handleAccountSetup = () => {
+      setNodes([]);
+    };
+    window.addEventListener('apexnav_account_setup', handleAccountSetup);
+    return () => window.removeEventListener('apexnav_account_setup', handleAccountSetup);
+  }, []);
 
   const checkNodeStatus = async (node: MonitoredNode): Promise<MonitoredNode> => {
     const start = performance.now();

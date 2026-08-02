@@ -61,9 +61,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(STORAGE_KEY_UN, unHash);
     localStorage.setItem(STORAGE_KEY_PW, pwHash);
     localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
+
+    // Initialize fresh empty workspace for the new admin
+    localStorage.setItem('apexnav_categories', JSON.stringify([]));
+    localStorage.setItem('apexnav_sites', JSON.stringify([]));
+    localStorage.setItem('apexnav_monitored_nodes_v4', JSON.stringify([]));
+
+    // Dispatch custom event to notify components to clear state
+    window.dispatchEvent(new Event('apexnav_account_setup'));
+
     setNeedsSetup(false);
     setCurrentUsername(cleanUn);
-    // Auto-login after setup
     sessionStorage.setItem(SESSION_KEY, 'true');
     setIsAdmin(true);
   }, []);

@@ -76,7 +76,7 @@ export const DEFAULT_TODOS: TodoItem[] = [
 export const getStoredCategories = (): Category[] => {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.categories);
-    return data ? JSON.parse(data) : DEFAULT_CATEGORIES;
+    return data !== null ? JSON.parse(data) : DEFAULT_CATEGORIES;
   } catch {
     return DEFAULT_CATEGORIES;
   }
@@ -89,7 +89,7 @@ export const saveCategories = (categories: Category[]): void => {
 export const getStoredSites = (): Site[] => {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.sites);
-    return data ? JSON.parse(data) : DEFAULT_SITES;
+    return data !== null ? JSON.parse(data) : DEFAULT_SITES;
   } catch {
     return DEFAULT_SITES;
   }

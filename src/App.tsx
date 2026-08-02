@@ -110,6 +110,17 @@ function AppInner() {
     });
   }, []);
 
+  // Listen to first-time account setup event to clear demo data and start fresh
+  useEffect(() => {
+    const handleAccountSetup = () => {
+      setCategories([]);
+      setSites([]);
+      syncWithD1([], []);
+    };
+    window.addEventListener('apexnav_account_setup', handleAccountSetup);
+    return () => window.removeEventListener('apexnav_account_setup', handleAccountSetup);
+  }, []);
+
   // Category & Site handlers (admin-only actions + D1 cloud sync)
   const handleAddSite = (newSiteData: Omit<Site, 'id'>) => {
     const site: Site = {
