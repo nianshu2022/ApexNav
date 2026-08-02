@@ -14,6 +14,8 @@ import {
   saveSites,
   DEFAULT_CATEGORIES,
   DEFAULT_SITES,
+  fetchD1Data,
+  syncWithD1,
 } from './utils/storage';
 
 // Official Apple Latest MacBook M3/M4 & macOS 5K Original Quality Wallpapers
@@ -98,7 +100,17 @@ function AppInner() {
     localStorage.setItem('apexnav_engine', engine);
   };
 
-  // Category & Site handlers (admin-only actions)
+  // Auto-fetch from Cloudflare D1 on mount for cross-device sync
+  useEffect(() => {
+    fetchD1Data().then((cloudData) => {
+      if (cloudData) {
+        setCategories(cloudData.categories);
+        setSites(cloudData.sites);
+      }
+    });
+  }, []);
+
+  // Category & Site handlers (admin-only actions + D1 cloud sync)
   const handleAddSite = (newSiteData: Omit<Site, 'id'>) => {
     const site: Site = {
       ...newSiteData,
@@ -107,18 +119,21 @@ function AppInner() {
     const updated = [site, ...sites];
     setSites(updated);
     saveSites(updated);
+    syncWithD1(categories, updated);
   };
 
   const handleEditSite = (updatedSite: Site) => {
     const updated = sites.map((s) => (s.id === updatedSite.id ? updatedSite : s));
     setSites(updated);
     saveSites(updated);
+    syncWithD1(categories, updated);
   };
 
   const handleDeleteSite = (id: string) => {
     const updated = sites.filter((s) => s.id !== id);
     setSites(updated);
     saveSites(updated);
+    syncWithD1(categories, updated);
   };
 
   const handleAddCategory = (newCatData: Omit<Category, 'id'>) => {
@@ -129,6 +144,7 @@ function AppInner() {
     const updated = [...categories, category];
     setCategories(updated);
     saveCategories(updated);
+    syncWithD1(updated, sites);
   };
 
   const handleDeleteCategory = (id: string) => {
@@ -138,6 +154,7 @@ function AppInner() {
     setSites(updatedSites);
     saveCategories(updatedCats);
     saveSites(updatedSites);
+    syncWithD1(updatedCats, updatedSites);
   };
 
   const handleImportData = (importedCats: Category[], importedSites: Site[]) => {
@@ -145,6 +162,7 @@ function AppInner() {
     setSites(importedSites);
     saveCategories(importedCats);
     saveSites(importedSites);
+    syncWithD1(importedCats, importedSites);
   };
 
   const handleResetDefault = () => {
@@ -152,6 +170,7 @@ function AppInner() {
     setSites(DEFAULT_SITES);
     saveCategories(DEFAULT_CATEGORIES);
     saveSites(DEFAULT_SITES);
+    syncWithD1(DEFAULT_CATEGORIES, DEFAULT_SITES);
   };
 
   const activeWallpaperUrl = APPLE_MACOS_WALLPAPERS[wallpaperIdx % APPLE_MACOS_WALLPAPERS.length];

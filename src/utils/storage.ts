@@ -119,3 +119,35 @@ export const getStoredNotes = (): string => {
 export const saveNotes = (notes: string): void => {
   localStorage.setItem(STORAGE_KEYS.notes, notes);
 };
+
+/** Cloudflare D1 Sync Helpers for Cross-Device Synchronization */
+export const syncWithD1 = async (categories: Category[], sites: Site[]): Promise<boolean> => {
+  try {
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categories, sites }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.success === true;
+  } catch {
+    return false;
+  }
+};
+
+export const fetchD1Data = async (): Promise<{ categories: Category[]; sites: Site[] } | null> => {
+  try {
+    const res = await fetch('/api/data');
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.success && Array.isArray(data.categories) && Array.isArray(data.sites)) {
+      saveCategories(data.categories);
+      saveSites(data.sites);
+      return { categories: data.categories, sites: data.sites };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
