@@ -9,8 +9,8 @@ interface PinModalProps {
 }
 
 export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const { login, needsSetup, setupAccount } = useAuth();
-  const [isSetupMode, setIsSetupMode] = useState(needsSetup);
+  const { login, needsSetup, setupAccount, isEnvAuth } = useAuth();
+  const [isSetupMode, setIsSetupMode] = useState(needsSetup && !isEnvAuth);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -181,26 +181,28 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
           </button>
 
           {/* Footer toggle mode */}
-          <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
-            {isSetupMode ? (
-              <button
-                type="button"
-                onClick={() => { setIsSetupMode(false); setError(''); }}
-                className="text-xs text-slate-500 dark:text-slate-400 font-medium hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
-              >
-                已有账号？点击切换为<b>登录</b>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => { setIsSetupMode(true); setError(''); }}
-                className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer flex items-center justify-center gap-1 mx-auto"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                忘记密码 / 设置新账号密码
-              </button>
-            )}
-          </div>
+          {!isEnvAuth && (
+            <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+              {isSetupMode ? (
+                <button
+                  type="button"
+                  onClick={() => { setIsSetupMode(false); setError(''); }}
+                  className="text-xs text-slate-500 dark:text-slate-400 font-medium hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                >
+                  已有账号？点击切换为<b>登录</b>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setIsSetupMode(true); setError(''); }}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer flex items-center justify-center gap-1 mx-auto"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  注册新账号
+                </button>
+              )}
+            </div>
+          )}
         </form>
       </div>
     </div>

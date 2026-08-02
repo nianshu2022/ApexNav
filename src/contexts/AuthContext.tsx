@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { saveCategories, saveSites, saveNodes, syncUserWithD1 } from '../utils/storage';
 
 const STORAGE_KEY_PW_PREFIX = 'apexnav_auth_pw_';
@@ -18,6 +18,7 @@ async function hash(str: string): Promise<string> {
 interface AuthContextType {
   isAdmin: boolean;
   needsSetup: boolean;
+  isEnvAuth: boolean;
   currentUsername: string | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
@@ -32,6 +33,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   needsSetup: false,
+  isEnvAuth: false,
   currentUsername: null,
   login: async () => false,
   logout: () => {},
@@ -54,7 +56,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
 
+  const [isEnvAuth, setIsEnvAuth] = useState<boolean>(false);
   const [needsSetup] = useState<boolean>(false);
+
+  // Check Cloudflare Auth Mode
+  useEffect(() => {
+    fetch('/api/auth/mode')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.success && data.isEnvAuth) {
+          setIsEnvAuth(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   /** Register or setup an account with username + password */
   const setupAccount = useCallback(async (username: string, password: string) => {
@@ -100,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const inputUnHash = await hash(cleanUn.toLowerCase());
       const inputPwHash = await hash(password);
 
-      // Attempt Cloudflare Function / D1 Login API (Passes both raw password and hash for Cloudflare Env Secret check)
+      // Attempt Cloudflare Function / D1 Login API
       let apiSuccess = false;
       try {
         const res = await fetch('/api/auth/login', {
@@ -234,7 +249,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentUsername]);
 
   return (
-    <AuthContext.Provider value={{ isAdmin, needsSetup, currentUsername, login, logout, setupAccount, changeCredentials }}>
+    <AuthContext.Provider value={{ isAdmin, needsSetup, isEnvAuth, currentUsername, login, logout, setupAccount, changeCredentials }}>
       {children}
     </AuthContext.Provider>
   );
