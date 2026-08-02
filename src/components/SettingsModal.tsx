@@ -2,7 +2,8 @@ import React, { useRef, useState } from 'react';
 import {
   X, Download, Upload, RefreshCw, Database, CheckCircle2,
   Shield, Info, Eye, EyeOff, LogOut, KeyRound, Trash2,
-  Layers, Plus, Edit3, Search, ExternalLink, ChevronDown, Check, AlertTriangle
+  Layers, Plus, Edit3, Search, ExternalLink, AlertTriangle,
+  FolderPlus, Globe, Sparkles, Server, ArrowRight
 } from 'lucide-react';
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,7 +24,7 @@ interface SettingsModalProps {
   onDeleteCategory: (id: string) => void;
 }
 
-type Tab = 'manage' | 'data' | 'security' | 'about';
+type Tab = 'sites' | 'categories' | 'cloud' | 'security' | 'about';
 
 interface ConfirmModalState {
   isOpen: boolean;
@@ -36,74 +37,6 @@ interface ConfirmModalState {
 
 const PRESET_EMOJIS = ['📁', '🤖', '💻', '💬', '🛠️', '📚', '📢', '🚀', '⚡', '🎨', '📌', '⭐', '🔥', '🎮', '🎵', '🌐'];
 
-// Custom Apple-style Dropdown Component
-const CustomSelect: React.FC<{
-  value: string;
-  options: { id: string; label: string; icon?: string; count?: number }[];
-  onChange: (val: string) => void;
-}> = ({ value, options, onChange }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const selectedOption = options.find((o) => o.id === value) || options[0];
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-800 dark:text-slate-200 font-semibold flex items-center justify-between gap-2 transition-all hover:bg-slate-200/60 dark:hover:bg-slate-700/60 cursor-pointer min-w-[140px] shadow-2xs"
-      >
-        <span className="flex items-center gap-1.5 truncate">
-          {selectedOption?.icon && <span>{selectedOption.icon}</span>}
-          <span className="truncate">{selectedOption?.label}</span>
-          {selectedOption?.count !== undefined && (
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 font-mono text-slate-500 dark:text-slate-400">
-              {selectedOption.count}
-            </span>
-          )}
-        </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 top-full mt-1.5 w-56 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-700/90 rounded-2xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 max-h-60 overflow-y-auto">
-            {options.map((opt) => {
-              const isSelected = opt.id === value;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(opt.id);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'
-                  }`}
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    {opt.icon && <span>{opt.icon}</span>}
-                    <span className="truncate">{opt.label}</span>
-                    {opt.count !== undefined && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 font-mono text-slate-400">
-                        {opt.count}
-                      </span>
-                    )}
-                  </span>
-                  {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
@@ -115,11 +48,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onEditSite,
   onDeleteSite,
   onAddCategory,
+  onEditCategory,
   onDeleteCategory,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('manage');
+  const [activeTab, setActiveTab] = useState<Tab>('sites');
+
+  // Search & Filter state for site management
+  const [selectedCatId, setSelectedCatId] = useState<string>('all');
+  const [searchFilter, setSearchFilter] = useState('');
+
+  // Inline Site Add/Edit state
+  const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [isSiteFormOpen, setIsSiteFormOpen] = useState(false);
+  const [siteForm, setSiteForm] = useState({
+    name: '',
+    url: '',
+    icon: '',
+    description: '',
+    category_id: categories[0]?.id || '',
+  });
+
+  // Inline Category Add/Edit state
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [catName, setCatName] = useState('');
+  const [catIcon, setCatIcon] = useState('📁');
+
+  // Account Change Credentials state
+  const [oldPassword, setOldPassword] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [credLoading, setCredLoading] = useState(false);
 
   // Custom Confirm Dialog State
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
@@ -128,6 +92,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     message: '',
     onConfirm: () => {},
   });
+
+  const { logout, changeCredentials, currentUsername, isEnvAuth } = useAuth();
+
+  if (!isOpen) return null;
+
+  const showMsg = (text: string, type: 'success' | 'error') => {
+    setMsg({ text, type });
+    setTimeout(() => setMsg(null), 3500);
+  };
 
   const askConfirm = (
     title: string,
@@ -140,48 +113,115 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       isOpen: true,
       title,
       message,
-      onConfirm,
-      isDanger,
       confirmText,
+      isDanger,
+      onConfirm,
     });
   };
 
-  // Site / Category Manage Tab States
-  const [searchFilter, setSearchFilter] = useState('');
-  const [selectedCatId, setSelectedCatId] = useState<string>('all');
+  // Open site add/edit inline form
+  const handleOpenSiteForm = (site?: Site) => {
+    if (site) {
+      setEditingSite(site);
+      setSiteForm({
+        name: site.name,
+        url: site.url,
+        icon: site.icon || '',
+        description: site.description || '',
+        category_id: site.category_id,
+      });
+    } else {
+      setEditingSite(null);
+      setSiteForm({
+        name: '',
+        url: '',
+        icon: '',
+        description: '',
+        category_id: selectedCatId !== 'all' ? selectedCatId : (categories[0]?.id || ''),
+      });
+    }
+    setIsSiteFormOpen(true);
+  };
 
-  // Category inline form state
-  const [isAddingCategory, setIsAddingCategory] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [newCatIcon, setNewCatIcon] = useState('📁');
+  // Submit site inline form
+  const handleSaveSite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!siteForm.name.trim() || !siteForm.url.trim()) return;
 
-  // Site inline modal state
-  const [editingSite, setEditingSite] = useState<Site | null>(null);
-  const [isSiteModalOpen, setIsSiteModalOpen] = useState(false);
-  const [siteForm, setSiteForm] = useState({
-    name: '',
-    url: '',
-    icon: '',
-    description: '',
-    category_id: categories[0]?.id || '1',
-  });
+    let formattedUrl = siteForm.url.trim();
+    if (!/^https?:\/\//i.test(formattedUrl)) {
+      formattedUrl = `https://${formattedUrl}`;
+    }
 
-  // Change credentials state
-  const [oldPassword, setOldPassword] = useState('');
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showOld, setShowOld] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [credLoading, setCredLoading] = useState(false);
+    let finalIcon = siteForm.icon.trim();
+    if (!finalIcon) {
+      try {
+        const domain = new URL(formattedUrl).hostname;
+        finalIcon = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
+      } catch {
+        finalIcon = '';
+      }
+    }
 
-  const { logout, changeCredentials, currentUsername } = useAuth();
+    if (editingSite) {
+      onEditSite({
+        ...editingSite,
+        name: siteForm.name.trim(),
+        url: formattedUrl,
+        icon: finalIcon,
+        description: siteForm.description.trim(),
+        category_id: siteForm.category_id,
+      });
+      showMsg('网址修改成功！', 'success');
+    } else {
+      onAddSite({
+        name: siteForm.name.trim(),
+        url: formattedUrl,
+        icon: finalIcon,
+        description: siteForm.description.trim(),
+        category_id: siteForm.category_id,
+      });
+      showMsg('新增网址成功！', 'success');
+    }
+    setIsSiteFormOpen(false);
+  };
 
-  if (!isOpen) return null;
+  // Open Category add/edit
+  const handleOpenCategoryForm = (cat?: Category) => {
+    if (cat) {
+      setEditingCategory(cat);
+      setCatName(cat.name);
+      setCatIcon(cat.icon || '📁');
+    } else {
+      setEditingCategory(null);
+      setCatName('');
+      setCatIcon('📁');
+    }
+    setIsAddingCategory(true);
+  };
 
-  const showMsg = (text: string, type: 'success' | 'error') => {
-    setMsg({ text, type });
-    setTimeout(() => setMsg(null), 3500);
+  // Save Category
+  const handleSaveCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!catName.trim()) return;
+
+    if (editingCategory) {
+      if (onEditCategory) {
+        onEditCategory({
+          ...editingCategory,
+          name: catName.trim(),
+          icon: catIcon.trim() || '📁',
+        });
+        showMsg(`分类「${catName.trim()}」修改成功！`, 'success');
+      }
+    } else {
+      onAddCategory({
+        name: catName.trim(),
+        icon: catIcon.trim() || '📁',
+      });
+      showMsg(`新增分类「${catName.trim()}」成功！`, 'success');
+    }
+    setIsAddingCategory(false);
   };
 
   // Export JSON
@@ -252,82 +292,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleChangeCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oldPassword || !newUsername.trim() || !newPassword) return;
-    if (newPassword.length < 4) { showMsg('新密码至少需要 4 位字符。', 'error'); return; }
-    if (newPassword !== confirmPassword) { showMsg('两次输入的新密码不一致。', 'error'); return; }
+    if (newPassword !== confirmPassword) {
+      showMsg('两次输入的次新密码不一致！', 'error');
+      return;
+    }
 
     setCredLoading(true);
-    const result = await changeCredentials(oldPassword, newUsername, newPassword);
+    const res = await changeCredentials(oldPassword, newUsername.trim(), newPassword);
     setCredLoading(false);
 
-    if (result === 'ok') {
-      showMsg('账号信息修改成功！', 'success');
-      setOldPassword(''); setNewUsername(''); setNewPassword(''); setConfirmPassword('');
-    } else if (result === 'wrong_password') {
-      showMsg('当前密码错误，请重新输入。', 'error');
+    if (res === 'ok') {
+      showMsg('账号名与密码修改成功！', 'success');
+      setOldPassword('');
+      setNewUsername('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } else if (res === 'wrong_password') {
+      showMsg('当前旧密码错误！', 'error');
     } else {
-      showMsg('修改失败，请稍后重试。', 'error');
+      showMsg('修改失败，请重试。', 'error');
     }
-  };
-
-  // Add Category Handler
-  const handleSaveCategory = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCatName.trim()) return;
-    onAddCategory({ name: newCatName.trim(), icon: newCatIcon.trim() || '📁' });
-    setNewCatName('');
-    setNewCatIcon('📁');
-    setIsAddingCategory(false);
-    showMsg('新增分类成功！', 'success');
-  };
-
-  // Add/Edit Site Modal Handler
-  const handleOpenSiteModal = (site?: Site) => {
-    if (site) {
-      setEditingSite(site);
-      setSiteForm({
-        name: site.name,
-        url: site.url,
-        icon: site.icon || '',
-        description: site.description || '',
-        category_id: site.category_id,
-      });
-    } else {
-      setEditingSite(null);
-      setSiteForm({
-        name: '',
-        url: '',
-        icon: '',
-        description: '',
-        category_id: selectedCatId !== 'all' ? selectedCatId : categories[0]?.id || '1',
-      });
-    }
-    setIsSiteModalOpen(true);
-  };
-
-  const handleSaveSite = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!siteForm.name.trim() || !siteForm.url.trim()) return;
-
-    let formattedUrl = siteForm.url.trim();
-    if (!/^https?:\/\//i.test(formattedUrl)) {
-      formattedUrl = `https://${formattedUrl}`;
-    }
-
-    if (editingSite) {
-      onEditSite({
-        ...editingSite,
-        ...siteForm,
-        url: formattedUrl,
-      });
-      showMsg('网址修改成功！', 'success');
-    } else {
-      onAddSite({
-        ...siteForm,
-        url: formattedUrl,
-      });
-      showMsg('新增网址成功！', 'success');
-    }
-    setIsSiteModalOpen(false);
   };
 
   // Filtered sites
@@ -340,277 +324,513 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return matchesCat && matchesSearch;
   });
 
-  const categoryFilterOptions = [
-    { id: 'all', label: '全部分类', count: sites.length },
-    ...categories.map((c) => ({
-      id: c.id,
-      label: c.name,
-      icon: c.icon,
-      count: sites.filter((s) => s.category_id === c.id).length,
-    })),
-  ];
-
-  const categorySelectOptions = categories.map((c) => ({
-    id: c.id,
-    label: c.name,
-    icon: c.icon,
-  }));
-
-  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'manage', label: '网址管理', icon: <Layers className="w-4 h-4" /> },
-    { key: 'data', label: '数据备份', icon: <Database className="w-4 h-4" /> },
+  const sidebarNav: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { key: 'sites', label: '网址管理', icon: <Globe className="w-4 h-4" />, badge: sites.length },
+    { key: 'categories', label: '分类管理', icon: <Layers className="w-4 h-4" />, badge: categories.length },
+    { key: 'cloud', label: '云端与数据', icon: <Database className="w-4 h-4" /> },
     { key: 'security', label: '账号安全', icon: <Shield className="w-4 h-4" /> },
-    { key: 'about', label: '关于', icon: <Info className="w-4 h-4" /> },
+    { key: 'about', label: '关于 ApexNav', icon: <Info className="w-4 h-4" /> },
   ];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in">
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6 z-50 animate-in fade-in duration-200">
+      {/* Main Container (macOS Double-Pane Layout) */}
+      <div className="w-full max-w-5xl h-[85vh] max-h-[720px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-2xl overflow-hidden flex flex-col md:flex-row relative">
 
-        {/* Modal Header */}
-        <div className="px-6 pt-6 pb-0 flex items-center justify-between">
-          <h3 className="text-xl font-bold text-slate-900 dark:text-white">设置与管理</h3>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Tabs Bar */}
-        <div className="px-6 pt-4 pb-0 flex gap-1 border-b border-slate-100 dark:border-slate-800 shrink-0">
-          {tabs.map((tab) => (
+        {/* ── 1. Left Sidebar ── */}
+        <aside className="w-full md:w-64 bg-slate-100/70 dark:bg-slate-950/60 border-r border-slate-200/80 dark:border-slate-800/80 flex flex-col shrink-0">
+          {/* Sidebar Header */}
+          <div className="p-5 flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-none">ApexNav</h3>
+                <p className="text-[10px] text-slate-400 font-medium mt-0.5">控制台 & 全局设置</p>
+              </div>
+            </div>
+            {/* Mobile close button */}
             <button
-              key={tab.key}
-              onClick={() => { setActiveTab(tab.key); setMsg(null); }}
-              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-t-2xl text-xs font-bold transition-all cursor-pointer border-b-2 -mb-px ${
-                activeTab === tab.key
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40'
-                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
+              onClick={onClose}
+              className="md:hidden p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white"
             >
-              {tab.icon}
-              {tab.label}
+              <X className="w-4 h-4" />
             </button>
-          ))}
-        </div>
+          </div>
 
-        {/* Tab Content Area */}
-        <div className="p-6 space-y-5 overflow-y-auto flex-1">
-          {/* Status Toast Message */}
+          {/* Navigation Items */}
+          <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
+            {sidebarNav.map((item) => {
+              const isActive = activeTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    setActiveTab(item.key);
+                    setIsSiteFormOpen(false);
+                    setIsAddingCategory(false);
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 scale-[1.01]'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge !== undefined && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Sidebar Footer (Current User Card) */}
+          <div className="p-3 border-t border-slate-200/60 dark:border-slate-800/60">
+            <div className="p-2.5 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
+                  {currentUsername ? currentUsername.charAt(0).toUpperCase() : 'G'}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate leading-none">
+                    {currentUsername || '未登录'}
+                  </p>
+                  <span className="text-[9px] text-emerald-500 font-semibold flex items-center gap-1 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                    {isEnvAuth ? 'Cloudflare 秘钥保护' : '已登录'}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  askConfirm('退出登录', '确定要退出当前管理员账号吗？', () => {
+                    logout();
+                    onClose();
+                  }, true, '确认退出');
+                }}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+                title="退出账号"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* ── 2. Right Main Content Area ── */}
+        <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-white dark:bg-slate-900">
+
+          {/* Top Main Bar */}
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                {sidebarNav.find((s) => s.key === activeTab)?.icon}
+                {sidebarNav.find((s) => s.key === activeTab)?.label}
+              </h2>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Message Alert Notification */}
           {msg && (
-            <div className={`p-3.5 rounded-2xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+            <div className={`mx-6 mt-4 p-3 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 ${
               msg.type === 'success'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
+                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60'
             }`}>
-              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{msg.text}</span>
             </div>
           )}
 
-          {/* ── 1. 网址与分类管理 ── */}
-          {activeTab === 'manage' && (
-            <div className="space-y-5">
-              {/* Category Management Block */}
-              <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Layers className="w-4 h-4 text-indigo-500" />
-                    分类列表（{categories.length} 个）
-                  </h4>
+          {/* Scrollable Content Body */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+            {/* ── TAB 1: 网址管理 (Bookmarks Management) ── */}
+            {activeTab === 'sites' && (
+              <div className="space-y-4">
+                {/* Header Filter Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={searchFilter}
+                        onChange={(e) => setSearchFilter(e.target.value)}
+                        placeholder="搜索网址或关键词..."
+                        className="w-full pl-8 pr-3 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <select
+                      value={selectedCatId}
+                      onChange={(e) => setSelectedCatId(e.target.value)}
+                      className="px-3 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 border-none text-xs font-bold text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+                    >
+                      <option value="all">全部分类 ({sites.length})</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.icon} {c.name} ({sites.filter((s) => s.category_id === c.id).length})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <button
-                    onClick={() => {
-                      setNewCatName('');
-                      setNewCatIcon('📁');
-                      setIsAddingCategory(true);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    onClick={() => handleOpenSiteForm()}
+                    className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/25 flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" />
+                    新增网址
+                  </button>
+                </div>
+
+                {/* Inline Site Form Drawer (No nested modal popup!) */}
+                {isSiteFormOpen && (
+                  <div className="p-5 rounded-3xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 animate-in slide-in-from-top-3">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-extrabold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                        {editingSite ? <Edit3 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                        {editingSite ? `修改网址「${editingSite.name}」` : '新增导航网址'}
+                      </h4>
+                      <button
+                        onClick={() => setIsSiteFormOpen(false)}
+                        className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold"
+                      >
+                        取消
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveSite} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">网站名称 *</label>
+                        <input
+                          type="text"
+                          required
+                          value={siteForm.name}
+                          onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })}
+                          placeholder="例如: GitHub"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">网站 URL 地址 *</label>
+                        <input
+                          type="text"
+                          required
+                          value={siteForm.url}
+                          onChange={(e) => setSiteForm({ ...siteForm, url: e.target.value })}
+                          placeholder="github.com"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">所属分类 *</label>
+                        <select
+                          value={siteForm.category_id}
+                          onChange={(e) => setSiteForm({ ...siteForm, category_id: e.target.value })}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                        >
+                          {categories.map((c) => (
+                            <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">图标 URL (留空自动抓取 128px HD 图标)</label>
+                        <input
+                          type="text"
+                          value={siteForm.icon}
+                          onChange={(e) => setSiteForm({ ...siteForm, icon: e.target.value })}
+                          placeholder="自定义图标 URL"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2 flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsSiteFormOpen(false)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800 cursor-pointer"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/30 cursor-pointer"
+                        >
+                          {editingSite ? '保存修改' : '立即添加'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Sites List Grid */}
+                <div className="space-y-2">
+                  {filteredSites.length === 0 ? (
+                    <div className="p-12 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+                      <Globe className="w-8 h-8 mx-auto mb-2 opacity-40 animate-bounce" />
+                      暂无匹配的网址
+                    </div>
+                  ) : (
+                    filteredSites.map((site) => {
+                      const parentCat = categories.find((c) => c.id === site.category_id);
+                      return (
+                        <div
+                          key={site.id}
+                          className="px-4 py-3 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-3 hover:bg-white dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all group"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-9 h-9 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 border border-slate-200/80 dark:border-slate-600/80 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1.5">
+                              {site.icon ? (
+                                <img src={site.icon} alt="" className="w-full h-full object-contain rounded-md" />
+                              ) : (
+                                <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase">{site.name.charAt(0)}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                  {site.name}
+                                </span>
+                                {parentCat && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200/40 dark:border-indigo-800/40 shrink-0">
+                                    {parentCat.icon} {parentCat.name}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                {site.url}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <a
+                              href={site.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors"
+                              title="访问网址"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                            <button
+                              onClick={() => handleOpenSiteForm(site)}
+                              className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                              title="修改网址"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                askConfirm(
+                                  '删除网址',
+                                  `确定要删除网址「${site.name}」吗？`,
+                                  () => {
+                                    onDeleteSite(site.id);
+                                    showMsg(`已删除网址「${site.name}」`, 'success');
+                                  },
+                                  true,
+                                  '确认删除'
+                                );
+                              }}
+                              className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+                              title="删除网址"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── TAB 2: 分类管理 (Category Management) ── */}
+            {activeTab === 'categories' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    分类可用来归类与收纳你的各类网页书签，点击编辑按钮可随时修改名称或 Emoji 图标。
+                  </p>
+                  <button
+                    onClick={() => handleOpenCategoryForm()}
+                    className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/25 flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
                     新增分类
                   </button>
                 </div>
 
-                {/* Categories Pills Grid */}
-                <div className="flex flex-wrap gap-2 pt-1">
+                {/* Inline Category Creator / Editor Drawer */}
+                {isAddingCategory && (
+                  <div className="p-5 rounded-3xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 animate-in slide-in-from-top-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-extrabold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                        {editingCategory ? <Edit3 className="w-4 h-4" /> : <FolderPlus className="w-4 h-4" />}
+                        {editingCategory ? `编辑分类「${editingCategory.name}」` : '新增导航分类'}
+                      </h4>
+                      <button
+                        onClick={() => setIsAddingCategory(false)}
+                        className="text-xs text-slate-400 font-bold"
+                      >
+                        取消
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveCategory} className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">分类名称 *</label>
+                          <input
+                            type="text"
+                            required
+                            value={catName}
+                            onChange={(e) => setCatName(e.target.value)}
+                            placeholder="例如: 实用工具"
+                            className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Emoji 图标</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={catIcon}
+                              onChange={(e) => setCatIcon(e.target.value)}
+                              placeholder="📁"
+                              className="w-16 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <div className="flex items-center gap-1 overflow-x-auto py-1">
+                              {PRESET_EMOJIS.slice(0, 10).map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => setCatIcon(emoji)}
+                                  className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-100 text-xs flex items-center justify-center cursor-pointer shrink-0"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingCategory(false)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 cursor-pointer"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md shadow-indigo-600/30 cursor-pointer"
+                        >
+                          {editingCategory ? '保存修改' : '立即添加'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Categories Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {categories.map((cat) => {
                     const catSiteCount = sites.filter((s) => s.category_id === cat.id).length;
                     return (
                       <div
                         key={cat.id}
-                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium flex items-center gap-2 group shadow-2xs hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+                        className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between hover:bg-white dark:hover:bg-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-all group"
                       >
-                        <span className="text-sm">{cat.icon}</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">{cat.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-700 font-mono font-bold text-slate-500 dark:text-slate-400">
-                          {catSiteCount}
-                        </span>
-                        <button
-                          onClick={() => {
-                            askConfirm(
-                              '删除分类',
-                              `确认要删除分类「${cat.name}」及其包含的所有 ${catSiteCount} 个网址吗？`,
-                              () => {
-                                onDeleteCategory(cat.id);
-                                showMsg(`已删除分类「${cat.name}」`, 'success');
-                              },
-                              true,
-                              '确认删除'
-                            );
-                          }}
-                          className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer ml-0.5"
-                          title="删除分类"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Site Management Header Filter Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-                  <CustomSelect
-                    value={selectedCatId}
-                    options={categoryFilterOptions}
-                    onChange={(val) => setSelectedCatId(val)}
-                  />
-
-                  <div className="relative flex-1">
-                    <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={searchFilter}
-                      onChange={(e) => setSearchFilter(e.target.value)}
-                      placeholder="搜索网址或链接..."
-                      className="w-full pl-9 pr-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/40 font-medium"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleOpenSiteModal()}
-                  className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all hover:scale-[1.02] cursor-pointer shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  新增网址
-                </button>
-              </div>
-
-              {/* Sites List */}
-              <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
-                {filteredSites.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
-                    暂无匹配的网址
-                  </div>
-                ) : (
-                  filteredSites.map((site) => {
-                    const parentCat = categories.find((c) => c.id === site.category_id);
-                    return (
-                      <div
-                        key={site.id}
-                        className="px-4 py-3 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-3 hover:bg-white dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all group"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-9 h-9 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 border border-slate-200/80 dark:border-slate-600/80 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1.5">
-                            {site.icon ? (
-                              <img src={site.icon} alt="" className="w-full h-full object-contain rounded-md" />
-                            ) : (
-                              <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase">{site.name.charAt(0)}</span>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                {site.name}
-                              </span>
-                              {parentCat && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200/40 dark:border-indigo-800/40 shrink-0">
-                                  {parentCat.icon} {parentCat.name}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate mt-0.5">
-                              {site.url}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-2xl p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 shadow-2xs">
+                            {cat.icon}
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                              {cat.name}
+                            </h4>
+                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                              {catSiteCount} 个网址
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          <a
-                            href={site.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors"
-                            title="访问网址"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
+                        <div className="flex items-center gap-1">
                           <button
-                            onClick={() => handleOpenSiteModal(site)}
+                            onClick={() => handleOpenCategoryForm(cat)}
                             className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                            title="修改网址"
+                            title="修改分类"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => {
                               askConfirm(
-                                '删除网址',
-                                `确定要删除网址「${site.name}」吗？`,
+                                '删除分类',
+                                `确认要删除分类「${cat.name}」及其包含的所有 ${catSiteCount} 个网址吗？`,
                                 () => {
-                                  onDeleteSite(site.id);
-                                  showMsg(`已删除网址「${site.name}」`, 'success');
+                                  onDeleteCategory(cat.id);
+                                  showMsg(`已删除分类「${cat.name}」`, 'success');
                                 },
                                 true,
                                 '确认删除'
                               );
                             }}
                             className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
-                            title="删除网址"
+                            title="删除分类"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
                     );
-                  })
-                )}
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* ── 2. 数据备份 ── */}
-          {activeTab === 'data' && (
-            <>
-              <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">备份与导入</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  导出当前所有书签数据为 JSON 文件，或从备份文件中恢复数据。
-                </p>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    onClick={handleExportJSON}
-                    className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    导出备份 JSON
-                  </button>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    导入备份 JSON
-                  </button>
-                  <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} className="hidden" />
-
+            {/* ── TAB 3: 云端与数据 (Cloud Sync & Backup) ── */}
+            {activeTab === 'cloud' && (
+              <div className="space-y-5">
+                {/* Cloud Connection Status Card */}
+                <div className="p-5 rounded-3xl bg-gradient-to-br from-indigo-900 to-slate-900 text-white border border-indigo-800 shadow-xl relative overflow-hidden">
+                  <div className="absolute right-0 top-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="flex items-center gap-3 mb-2">
+                    <Server className="w-5 h-5 text-indigo-400 animate-pulse" />
+                    <h4 className="text-sm font-bold text-white">Cloudflare D1 无服务器数据库绑定状态</h4>
+                  </div>
+                  <p className="text-xs text-indigo-200 leading-relaxed">
+                    已打通 Cloudflare D1 边缘数据库。多设备间可随时进行同步全量覆盖与拉取。
+                  </p>
                   {currentUsername && (
-                    <>
+                    <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         onClick={async () => {
                           showMsg('正在向 Cloudflare D1 数据库上传数据...', 'success');
@@ -621,10 +841,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             showMsg('❌ 上传失败，请检查 Cloudflare 数据库绑定状态。', 'error');
                           }
                         }}
-                        className="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all cursor-pointer"
+                        className="px-4 py-2 rounded-2xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
                       >
                         <Database className="w-3.5 h-3.5" />
-                        上传当前数据至云端
+                        一键上传至云端数据库
                       </button>
 
                       <button
@@ -638,410 +858,306 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             showMsg('ℹ️ 未检测到云端有更新数据或数据库尚无记录。', 'error');
                           }
                         }}
-                        className="px-4 py-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center gap-1.5 transition-all cursor-pointer"
+                        className="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 flex items-center gap-1.5 transition-all cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        从云端拉取最新数据
+                        从云端数据库拉取最新
                       </button>
-                    </>
+                    </div>
+                  )}
+                </div>
+
+                {/* Local JSON Export & Import Card */}
+                <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">JSON 文件备份与恢复</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    将你的所有分类和网址导出为本地 `.json` 备份文件，随时可以在其他网站或客户端中导入复原。
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={handleExportJSON}
+                      className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      导出 JSON 备份文件
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      导入 JSON 备份文件
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} className="hidden" />
+                  </div>
+                </div>
+
+                {/* Danger Zone */}
+                <div className="p-5 rounded-3xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40 space-y-3">
+                  <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4" />
+                    危险操作区域
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => {
+                        askConfirm(
+                          '恢复默认预设',
+                          '确定要恢复默认预设导航数据吗？这会覆盖重置当前所有修改。',
+                          () => {
+                            onResetDefault();
+                            showMsg('已恢复默认示例网址。', 'success');
+                          },
+                          false,
+                          '确认恢复'
+                        );
+                      }}
+                      className="px-4 py-2 rounded-2xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                    >
+                      恢复默认预设网址
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        askConfirm(
+                          '清空所有数据',
+                          '确定要清空所有网址和分类吗？此操作不可撤销，建议先导出备份。',
+                          () => {
+                            onImportData([], []);
+                            showMsg('数据已全部清空。', 'success');
+                          },
+                          true,
+                          '确认清空'
+                        );
+                      }}
+                      className="px-4 py-2 rounded-2xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-md shadow-rose-600/25 transition-all cursor-pointer"
+                    >
+                      清空当前账号所有数据
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── TAB 4: 账号安全 (Account Security) ── */}
+            {activeTab === 'security' && (
+              <div className="space-y-5">
+                {/* User Status Card */}
+                <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-indigo-600/30">
+                      {currentUsername ? currentUsername.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                          {currentUsername || '未登录'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+                          ● 当前已登录
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {isEnvAuth ? '已启用 Cloudflare 环境变量固定密钥保护' : '使用标准密码加密管理账号'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      askConfirm('退出登录', '确定要退出当前账号吗？', () => {
+                        logout();
+                        onClose();
+                      }, true, '确认退出');
+                    }}
+                    className="px-4 py-2 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                  >
+                    退出登录
+                  </button>
+                </div>
+
+                {/* Change Credentials Card */}
+                <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <KeyRound className="w-4 h-4" />
+                    修改账号密码
+                  </h4>
+
+                  {isEnvAuth ? (
+                    <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-xs text-indigo-900 dark:text-indigo-200 leading-relaxed">
+                      🛡️ **提示**：当前已开启 Cloudflare 环境变量秘钥固定校验。若需修改密码，请登录 Cloudflare 控制台在 `Environment Variables` 中修改 `ADMIN_PASSWORD` 即可。
+                    </div>
+                  ) : (
+                    <form onSubmit={handleChangeCredentials} className="space-y-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">当前旧密码 *</label>
+                        <div className="relative">
+                          <input
+                            type={showOld ? 'text' : 'password'}
+                            required
+                            value={oldPassword}
+                            onChange={(e) => setOldPassword(e.target.value)}
+                            placeholder="输入旧密码"
+                            className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowOld(!showOld)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            {showOld ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">新用户名 *</label>
+                          <input
+                            type="text"
+                            required
+                            value={newUsername}
+                            onChange={(e) => setNewUsername(e.target.value)}
+                            placeholder="输入新用户名"
+                            className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">新密码 *</label>
+                          <div className="relative">
+                            <input
+                              type={showNew ? 'text' : 'password'}
+                              required
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="输入新密码"
+                              className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNew(!showNew)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                              {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">确认新密码 *</label>
+                        <input
+                          type="password"
+                          required
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="再次输入新密码"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={credLoading}
+                          className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
+                        >
+                          {credLoading ? '修改中...' : '保存新账号信息'}
+                        </button>
+                      </div>
+                    </form>
                   )}
                 </div>
               </div>
+            )}
 
-              <div className="pt-1 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      askConfirm(
-                        '恢复默认预设',
-                        '确定要恢复默认预设导航数据吗？这会覆盖重置当前所有修改。',
-                        () => {
-                          onResetDefault();
-                          showMsg('已恢复默认示例网址。', 'success');
-                        },
-                        false,
-                        '确认恢复'
-                      );
-                    }}
-                    className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    恢复默认预设
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      askConfirm(
-                        '清空所有数据',
-                        '确定要清空所有网址和分类吗？此操作不可撤销，建议先导出备份。',
-                        () => {
-                          onImportData([], []);
-                          showMsg('数据已全部清空。', 'success');
-                        },
-                        true,
-                        '确认清空'
-                      );
-                    }}
-                    className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    清空所有数据
-                  </button>
-                </div>
-
-                <span className="text-[11px] text-slate-400 dark:text-slate-600 font-mono">
-                  {categories.length} 分类 · {sites.length} 网址
-                </span>
-              </div>
-            </>
-          )}
-
-          {/* ── 3. 账号安全 ── */}
-          {activeTab === 'security' && (
-            <>
-              {/* Currently Logged In User Badge */}
-              <div className="p-4 rounded-3xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-800/60 flex items-center justify-between shadow-2xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 text-white font-extrabold text-sm flex items-center justify-center shadow-md shrink-0">
-                    {(currentUsername || 'Admin').charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 dark:text-white">{currentUsername || 'Admin'}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 font-bold border border-emerald-400/30">
-                        ● 当前在线
-                      </span>
+            {/* ── TAB 5: 关于 (About System) ── */}
+            {activeTab === 'about' && (
+              <div className="space-y-4">
+                <div className="p-6 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-indigo-500/30">
+                      A
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">拥有全站管理与数据编辑权限</p>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900 dark:text-white">ApexNav</h3>
+                      <p className="text-xs text-slate-400 font-medium">苹果风极简响应式导航系统 v2.5.0</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    ApexNav 是一款专为高效工作者打造的极简、无广告、响应式个人网址导航系统。集成了无缝跨设备 Cloudflare D1 数据库同步、实时网络节点监控、多引擎搜素与自动联想功能。
+                  </p>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                    <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
+                      <span className="text-[10px] font-bold text-slate-400">前端框架</span>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">React 19 + Vite</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
+                      <span className="text-[10px] font-bold text-slate-400">云端后端</span>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">Cloudflare Pages</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60">
+                      <span className="text-[10px] font-bold text-slate-400">云数据库</span>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">Cloudflare D1 (SQLite)</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-xs text-slate-400 font-medium">开源许可证: MIT License</span>
+                    <a
+                      href="https://github.com/nianshu2022/ApexNav"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                    >
+                      访问 GitHub 仓库
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </a>
                   </div>
                 </div>
               </div>
-
-              <form onSubmit={handleChangeCredentials} className="p-4 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5" />
-                  修改账号信息
-                </h4>
-
-                <div className="relative">
-                  <input
-                    type={showOld ? 'text' : 'password'}
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
-                    placeholder="当前密码"
-                    className="w-full px-4 py-2.5 pr-10 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white placeholder-slate-400 text-xs outline-none focus:ring-2 focus:ring-indigo-400/40 font-medium transition-all"
-                  />
-                  <button type="button" onClick={() => setShowOld(!showOld)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
-                    {showOld ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-
-                <input
-                  type="text"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder="新用户名"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white placeholder-slate-400 text-xs outline-none focus:ring-2 focus:ring-indigo-400/40 font-medium transition-all"
-                />
-
-                <div className="relative">
-                  <input
-                    type={showNew ? 'text' : 'password'}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="新密码（至少 4 位）"
-                    className="w-full px-4 py-2.5 pr-10 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white placeholder-slate-400 text-xs outline-none focus:ring-2 focus:ring-indigo-400/40 font-medium transition-all"
-                  />
-                  <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
-                    {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="确认新密码"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white placeholder-slate-400 text-xs outline-none focus:ring-2 focus:ring-indigo-400/40 font-medium transition-all"
-                />
-
-                <button
-                  type="submit"
-                  disabled={!oldPassword || !newUsername.trim() || !newPassword || !confirmPassword || credLoading}
-                  className="w-full py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
-                >
-                  {credLoading ? '保存中...' : '保存账号信息'}
-                </button>
-              </form>
-
-              <div className="p-4 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">退出登录</p>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">退出后恢复访客只读状态</p>
-                </div>
-                <button
-                  onClick={() => { logout(); onClose(); }}
-                  className="px-4 py-2 rounded-2xl text-xs font-bold text-rose-500 hover:text-rose-600 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-rose-200/60 dark:border-rose-800/60 flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  退出登录
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* ── 4. 关于 ── */}
-          {activeTab === 'about' && (
-            <div className="space-y-3">
-              <div className="p-4 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border border-indigo-200/40 dark:border-indigo-800/40">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-md">
-                    <span className="text-white font-black text-sm">A</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-white text-sm">ApexNav</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">苹果风格极简个人导航主页</p>
-                  </div>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                  <p>🚀 <span className="font-bold text-slate-700 dark:text-slate-300">技术栈</span>：React + TypeScript + Tailwind CSS v4</p>
-                  <p>☁️ <span className="font-bold text-slate-700 dark:text-slate-300">部署</span>：Cloudflare Pages</p>
-                  <p>🔒 <span className="font-bold text-slate-700 dark:text-slate-300">数据存储</span>：localStorage（本地加密优先）</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 pb-5 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end shrink-0">
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 shadow-md shadow-indigo-600/30 transition-all cursor-pointer"
-          >
-            完成
-          </button>
-        </div>
-
-        {/* Inline Add/Edit Site Sub-Modal */}
-        {isSiteModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[100] animate-in fade-in">
-            <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl relative">
-              <button
-                onClick={() => setIsSiteModalOpen(false)}
-                className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-                {editingSite ? '修改网址' : '新增网址'}
-              </h3>
-
-              <form onSubmit={handleSaveSite} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    所属分类 *
-                  </label>
-                  <CustomSelect
-                    value={siteForm.category_id}
-                    options={categorySelectOptions}
-                    onChange={(val) => setSiteForm({ ...siteForm, category_id: val })}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    网站名称 *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={siteForm.name}
-                    onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })}
-                    placeholder="例如：Google"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500/40"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    网站 URL *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={siteForm.url}
-                    onChange={(e) => setSiteForm({ ...siteForm, url: e.target.value })}
-                    placeholder="https://google.com"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500/40"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    图标 URL <span className="text-slate-400 font-normal">（留空自动抓取）</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={siteForm.icon}
-                    onChange={(e) => setSiteForm({ ...siteForm, icon: e.target.value })}
-                    placeholder="可选图标地址"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500/40"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setIsSiteModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/25 cursor-pointer"
-                  >
-                    保存
-                  </button>
-                </div>
-              </form>
-            </div>
+            )}
           </div>
-        )}
-
-        {/* Inline Add/Edit Category Sub-Modal */}
-        {isAddingCategory && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[100] animate-in fade-in">
-            <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl relative">
-              <button
-                onClick={() => setIsAddingCategory(false)}
-                className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-                新增分类
-              </h3>
-
-              <form onSubmit={handleSaveCategory} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    分类名称 *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    autoFocus
-                    value={newCatName}
-                    onChange={(e) => setNewCatName(e.target.value)}
-                    placeholder="例如：AI 工具、开发用具"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500/40"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    分类图标 (Emoji)
-                  </label>
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <input
-                      type="text"
-                      value={newCatIcon}
-                      onChange={(e) => setNewCatIcon(e.target.value)}
-                      className="w-14 px-2 py-2 text-center text-base font-bold rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/40"
-                    />
-                    <span className="text-xs text-slate-400 font-medium">可自定义或从下方选图标</span>
-                  </div>
-
-                  <div className="grid grid-cols-8 gap-1.5 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
-                    {PRESET_EMOJIS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => setNewCatIcon(emoji)}
-                        className={`w-8 h-8 rounded-xl text-sm flex items-center justify-center transition-all cursor-pointer ${
-                          newCatIcon === emoji
-                            ? 'bg-indigo-600 text-white shadow-md scale-110'
-                            : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
-                        }`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingCategory(false)}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/25 cursor-pointer"
-                  >
-                    保存分类
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Custom Apple-Style Confirm Modal */}
-        {confirmModal.isOpen && (
-          <div
-            className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in"
-            onClick={(e) => { if (e.target === e.currentTarget) setConfirmModal({ ...confirmModal, isOpen: false }); }}
-          >
-            <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800/80 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-start gap-3.5">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border shrink-0 ${
-                  confirmModal.isDanger
-                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-500 border-rose-200/60 dark:border-rose-800/60'
-                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-500 border-amber-200/60 dark:border-amber-800/60'
-                }`}>
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-base font-bold text-slate-900 dark:text-white">{confirmModal.title}</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{confirmModal.message}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    confirmModal.onConfirm();
-                    setConfirmModal({ ...confirmModal, isOpen: false });
-                  }}
-                  className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition-all hover:scale-[1.02] cursor-pointer ${
-                    confirmModal.isDanger
-                      ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25'
-                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/25'
-                  }`}
-                >
-                  {confirmModal.confirmText || '确定'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </main>
       </div>
+
+      {/* Custom Confirm Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[100] animate-in fade-in">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+            <h4 className="text-base font-bold text-slate-900 dark:text-white">
+              {confirmModal.title}
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              {confirmModal.message}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  confirmModal.onConfirm();
+                  setConfirmModal({ ...confirmModal, isOpen: false });
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md cursor-pointer ${
+                  confirmModal.isDanger
+                    ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'
+                    : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30'
+                }`}
+              >
+                {confirmModal.confirmText || '确认'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
