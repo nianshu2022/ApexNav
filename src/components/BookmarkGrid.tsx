@@ -224,12 +224,12 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                 className="flex items-center gap-3 min-w-0 w-full group/link"
               >
                 {/* Icon Badge Container */}
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200/90 dark:from-slate-700 dark:to-slate-600/80 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200/60 dark:border-slate-500/40 shadow-2xs group-hover/link:scale-105 transition-transform">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-600/80 shadow-2xs group-hover/link:scale-105 transition-transform p-1.5">
                   {site.icon ? (
                     <img
                       src={site.icon}
                       alt={site.name}
-                      className="w-5 h-5 object-contain"
+                      className="w-full h-full object-contain rounded-md"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                         (e.target as HTMLElement).nextElementSibling?.removeAttribute('style');

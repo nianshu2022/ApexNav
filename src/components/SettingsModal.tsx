@@ -516,9 +516,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="px-4 py-3 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-3 hover:bg-white dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all group"
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-9 h-9 rounded-2xl bg-white dark:bg-slate-700 border border-slate-200/80 dark:border-slate-600/80 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                          <div className="w-9 h-9 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 border border-slate-200/80 dark:border-slate-600/80 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1.5">
                             {site.icon ? (
-                              <img src={site.icon} alt="" className="w-4 h-4 object-contain" />
+                              <img src={site.icon} alt="" className="w-full h-full object-contain rounded-md" />
                             ) : (
                               <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase">{site.name.charAt(0)}</span>
                             )}
