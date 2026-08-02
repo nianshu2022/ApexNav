@@ -7,10 +7,10 @@ ApexNav 是一款基于 **React 19 + TypeScript + Tailwind CSS v4 + Vite** 打�
 ## 📸 界面预览 (UI Screenshots)
 
 ### ☀️ 浅色主题 (Light Mode)
-![ApexNav 浅色主题预览](public/docs/light_preview.png)
+![ApexNav 浅色主题预览](public/docs/light_preview_v2.png)
 
 ### 🌙 深色主题 (Dark Mode)
-![ApexNav 深色主题预览](public/docs/dark_preview.png)
+![ApexNav 深色主题预览](public/docs/dark_preview_v2.png)
 
 ---
 
