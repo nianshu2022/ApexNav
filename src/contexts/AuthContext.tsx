@@ -48,7 +48,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [currentUsername, setCurrentUsername] = useState<string | null>(() => {
     if (sessionStorage.getItem(SESSION_KEY_IS_ADMIN) === 'true') {
-      return localStorage.getItem(STORAGE_KEY_DISPLAY_UN) || 'admin';
+      const displayUn = localStorage.getItem(STORAGE_KEY_DISPLAY_UN);
+      return (displayUn && displayUn !== 'null' && displayUn !== 'undefined') ? displayUn : 'admin';
     }
     return null;
   });

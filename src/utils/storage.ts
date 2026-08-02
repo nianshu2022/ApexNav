@@ -75,15 +75,24 @@ export const DEFAULT_TODOS: TodoItem[] = [
   { id: '2', content: '体验 4 大搜索引擎与搜索自动联想', completed: false },
 ];
 
+// Helper to strictly sanitize username so "null", "undefined", or empty strings return null (Guest mode)
+export function sanitizeUsername(username?: string | null): string | null {
+  if (!username) return null;
+  const clean = username.trim().toLowerCase();
+  if (clean === '' || clean === 'null' || clean === 'undefined') return null;
+  return clean;
+}
+
 // Account-Scoped Storage Methods
 export const getStoredCategories = (username?: string | null): Category[] => {
-  if (!username) return DEFAULT_CATEGORIES;
+  const un = sanitizeUsername(username);
+  if (!un) return DEFAULT_CATEGORIES;
   try {
-    const key = `apexnav_categories_${username.toLowerCase()}`;
+    const key = `apexnav_categories_${un}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
     // Initialize new account with clean empty workspace
-    saveCategories([], username);
+    saveCategories([], un);
     return [];
   } catch {
     return [];
@@ -91,19 +100,21 @@ export const getStoredCategories = (username?: string | null): Category[] => {
 };
 
 export const saveCategories = (categories: Category[], username?: string | null): void => {
-  if (!username) return;
-  const key = `apexnav_categories_${username.toLowerCase()}`;
+  const un = sanitizeUsername(username);
+  if (!un) return;
+  const key = `apexnav_categories_${un}`;
   localStorage.setItem(key, JSON.stringify(categories));
 };
 
 export const getStoredSites = (username?: string | null): Site[] => {
-  if (!username) return DEFAULT_SITES;
+  const un = sanitizeUsername(username);
+  if (!un) return DEFAULT_SITES;
   try {
-    const key = `apexnav_sites_${username.toLowerCase()}`;
+    const key = `apexnav_sites_${un}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
     // Initialize new account with clean empty workspace
-    saveSites([], username);
+    saveSites([], un);
     return [];
   } catch {
     return [];
@@ -111,19 +122,21 @@ export const getStoredSites = (username?: string | null): Site[] => {
 };
 
 export const saveSites = (sites: Site[], username?: string | null): void => {
-  if (!username) return;
-  const key = `apexnav_sites_${username.toLowerCase()}`;
+  const un = sanitizeUsername(username);
+  if (!un) return;
+  const key = `apexnav_sites_${un}`;
   localStorage.setItem(key, JSON.stringify(sites));
 };
 
 export const getStoredNodes = (username?: string | null): any[] => {
-  if (!username) return DEFAULT_NODES;
+  const un = sanitizeUsername(username);
+  if (!un) return DEFAULT_NODES;
   try {
-    const key = `apexnav_nodes_${username.toLowerCase()}`;
+    const key = `apexnav_nodes_${un}`;
     const data = localStorage.getItem(key);
     if (data !== null) return JSON.parse(data);
     // Initialize new account with clean empty workspace
-    saveNodes([], username);
+    saveNodes([], un);
     return [];
   } catch {
     return [];
@@ -131,8 +144,9 @@ export const getStoredNodes = (username?: string | null): any[] => {
 };
 
 export const saveNodes = (nodes: any[], username?: string | null): void => {
-  if (!username) return;
-  const key = `apexnav_nodes_${username.toLowerCase()}`;
+  const un = sanitizeUsername(username);
+  if (!un) return;
+  const key = `apexnav_nodes_${un}`;
   localStorage.setItem(key, JSON.stringify(nodes));
 };
 
@@ -164,12 +178,13 @@ export const syncUserWithD1 = async (
   sites: Site[],
   nodes: any[] = []
 ): Promise<boolean> => {
-  if (!username) return false;
+  const un = sanitizeUsername(username);
+  if (!un) return false;
   try {
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, categories, sites, nodes }),
+      body: JSON.stringify({ username: un, categories, sites, nodes }),
     });
     if (!res.ok) return false;
     const data = await res.json();
@@ -182,16 +197,17 @@ export const syncUserWithD1 = async (
 export const fetchUserD1Data = async (
   username: string | null
 ): Promise<{ categories: Category[]; sites: Site[]; nodes: any[] } | null> => {
-  if (!username) return null;
+  const un = sanitizeUsername(username);
+  if (!un) return null;
   try {
-    const res = await fetch(`/api/data?username=${encodeURIComponent(username.toLowerCase())}`);
+    const res = await fetch(`/api/data?username=${encodeURIComponent(un)}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.success && !data.isNewUser && Array.isArray(data.categories) && Array.isArray(data.sites)) {
-      saveCategories(data.categories, username);
-      saveSites(data.sites, username);
+      saveCategories(data.categories, un);
+      saveSites(data.sites, un);
       if (Array.isArray(data.nodes)) {
-        saveNodes(data.nodes, username);
+        saveNodes(data.nodes, un);
       }
       return { categories: data.categories, sites: data.sites, nodes: data.nodes || [] };
     }
