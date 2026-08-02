@@ -129,8 +129,23 @@ function AppInner() {
       loadAccountData(un);
     };
 
+    const handleFocus = () => {
+      if (currentUsername) {
+        fetchUserD1Data(currentUsername).then((cloudData) => {
+          if (cloudData && Array.isArray(cloudData.categories) && cloudData.categories.length > 0) {
+            setCategories(cloudData.categories);
+            if (Array.isArray(cloudData.sites)) setSites(cloudData.sites);
+          }
+        });
+      }
+    };
+
     window.addEventListener('apexnav_auth_change', handleAuthChange);
-    return () => window.removeEventListener('apexnav_auth_change', handleAuthChange);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('apexnav_auth_change', handleAuthChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [currentUsername]);
 
   // Category & Site handlers (admin-only actions + account D1 cloud sync)

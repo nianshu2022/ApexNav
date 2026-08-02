@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { syncUserWithD1, fetchUserD1Data } from '../utils/storage';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -607,6 +608,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     导入备份 JSON
                   </button>
                   <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} className="hidden" />
+
+                  {currentUsername && (
+                    <>
+                      <button
+                        onClick={async () => {
+                          showMsg('正在向 Cloudflare D1 数据库上传数据...', 'success');
+                          const ok = await syncUserWithD1(currentUsername, categories, sites);
+                          if (ok) {
+                            showMsg('✅ 已成功将当前所有分类和网址写入 Cloudflare 云端数据库！', 'success');
+                          } else {
+                            showMsg('❌ 上传失败，请检查 Cloudflare 数据库绑定状态。', 'error');
+                          }
+                        }}
+                        className="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition-all cursor-pointer"
+                      >
+                        <Database className="w-3.5 h-3.5" />
+                        上传当前数据至云端
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          showMsg('正在从 Cloudflare D1 拉取最新云端数据...', 'success');
+                          const cloudData = await fetchUserD1Data(currentUsername);
+                          if (cloudData && Array.isArray(cloudData.categories)) {
+                            onImportData(cloudData.categories, cloudData.sites || []);
+                            showMsg(`✅ 拉取成功！加载了云端 ${cloudData.categories.length} 个分类，${(cloudData.sites || []).length} 个网址。`, 'success');
+                          } else {
+                            showMsg('ℹ️ 未检测到云端有更新数据或数据库尚无记录。', 'error');
+                          }
+                        }}
+                        className="px-4 py-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        从云端拉取最新数据
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
