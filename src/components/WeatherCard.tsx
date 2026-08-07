@@ -291,7 +291,9 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
   };
 
   return (
-    <div className="p-4 rounded-3xl bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-cyan-500/10 dark:from-sky-900/20 dark:via-blue-900/15 dark:to-cyan-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 min-h-[165px] relative">
+    <div className="glass-card bg-white/80 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-4 flex flex-col justify-between h-[200px] max-h-[200px] overflow-hidden relative">
+
+
       {/* Header Bar */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center space-x-2">

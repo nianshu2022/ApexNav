@@ -37,13 +37,17 @@ interface SearchHeroProps {
   currentEngine: SearchEngineKey;
   sites: Site[];
   onChangeEngine: (engine: SearchEngineKey) => void;
+  onSearchSubmit?: (url: string) => void;
 }
 
 export const SearchHero: React.FC<SearchHeroProps> = ({
   currentEngine,
   sites,
   onChangeEngine,
+  onSearchSubmit,
 }) => {
+
+
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [matchedSites, setMatchedSites] = useState<Site[]>([]);
@@ -107,12 +111,30 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Listen for '/' shortcut focus event dispatched by useKeyboardShortcuts
+  useEffect(() => {
+    const handler = () => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+      setIsFocused(true);
+    };
+    window.addEventListener('apexnav_focus_search', handler);
+    return () => window.removeEventListener('apexnav_focus_search', handler);
+  }, []);
+
   const handleSearch = (searchTerm?: string) => {
     const targetQuery = searchTerm || query;
     if (!targetQuery.trim()) return;
-    window.open(`${activeEngine.url}${encodeURIComponent(targetQuery)}`, '_blank');
+    const targetUrl = `${activeEngine.url}${encodeURIComponent(targetQuery.trim())}`;
+    if (typeof window !== 'undefined' && (window as any).electronAPI && onSearchSubmit) {
+      onSearchSubmit(targetUrl);
+    } else {
+      window.open(targetUrl, '_blank');
+    }
     setIsFocused(false);
   };
+
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {

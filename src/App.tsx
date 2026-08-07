@@ -4,7 +4,11 @@ import { SearchHero } from './components/SearchHero';
 import { WidgetsGrid } from './components/WidgetsGrid';
 import { BookmarkGrid } from './components/BookmarkGrid';
 import { SettingsModal } from './components/SettingsModal';
+import { WidgetHubModal } from './components/WidgetHubModal';
 import { PinModal } from './components/PinModal';
+
+import { CommandBar } from './components/CommandBar';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { SearchEngineKey, Category, Site } from './types';
 import {
@@ -16,8 +20,11 @@ import {
   DEFAULT_SITES,
   fetchUserD1Data,
   syncUserWithD1,
-  getStoredNodes,
+  getWidgetConfig,
+  saveWidgetConfig,
 } from './utils/storage';
+import type { WidgetConfig } from './types';
+
 
 // Official Apple Latest MacBook M3/M4 & macOS 5K Original Quality Wallpapers
 const APPLE_MACOS_WALLPAPERS = [
@@ -65,8 +72,11 @@ function AppInner() {
 
   const [categories, setCategories] = useState<Category[]>(() => getStoredCategories(currentUsername));
   const [sites, setSites] = useState<Site[]>(() => getStoredSites(currentUsername));
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig>(getWidgetConfig);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isWidgetHubOpen, setIsWidgetHubOpen] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
 
   // Sync dark mode
   useEffect(() => {
@@ -78,84 +88,68 @@ function AppInner() {
     localStorage.setItem('apexnav_dark', JSON.stringify(darkMode));
   }, [darkMode]);
 
+  const handleWidgetConfigChange = (newConfig: WidgetConfig) => {
+    setWidgetConfig(newConfig);
+    saveWidgetConfig(newConfig);
+  };
+
   const handleToggleWidgets = () => {
-    const nextState = !showWidgets;
-    setShowWidgets(nextState);
-    localStorage.setItem('apexnav_widgets', JSON.stringify(nextState));
+    const next = !showWidgets;
+    setShowWidgets(next);
+    localStorage.setItem('apexnav_widgets', JSON.stringify(next));
   };
 
   const handleToggleBingBg = () => {
-    const nextState = !bingBg;
-    setBingBg(nextState);
-    localStorage.setItem('apexnav_bing_bg', JSON.stringify(nextState));
+    const next = !bingBg;
+    setBingBg(next);
+    localStorage.setItem('apexnav_bing_bg', JSON.stringify(next));
   };
 
-  const handleChangeWallpaper = () => {
-    const nextIdx = (wallpaperIdx + 1) % APPLE_MACOS_WALLPAPERS.length;
-    setWallpaperIdx(nextIdx);
-    localStorage.setItem('apexnav_wallpaper_idx', nextIdx.toString());
+  const handleChangeWallpaper = (idx: number) => {
+    setWallpaperIdx(idx);
+    localStorage.setItem('apexnav_wallpaper_idx', idx.toString());
   };
 
-  const handleChangeEngine = (engine: SearchEngineKey) => {
-    setCurrentEngine(engine);
-    localStorage.setItem('apexnav_engine', engine);
+  const handleChangeEngine = (engineKey: SearchEngineKey) => {
+    setCurrentEngine(engineKey);
+    localStorage.setItem('apexnav_engine', engineKey);
   };
 
-  // Account data switching & D1 Cloud fetch
+  // Sync D1 data on user change
   useEffect(() => {
-    const loadAccountData = (un: string | null) => {
-      const userCats = getStoredCategories(un);
-      const userSites = getStoredSites(un);
-      setCategories(userCats);
-      setSites(userSites);
-
-      if (un) {
-        fetchUserD1Data(un).then((cloudData) => {
-          if (cloudData && Array.isArray(cloudData.categories) && cloudData.categories.length > 0) {
-            setCategories(cloudData.categories);
-            if (Array.isArray(cloudData.sites)) setSites(cloudData.sites);
-          } else if (userCats.length > 0 || userSites.length > 0) {
-            // Auto-sync local account data to Cloudflare D1
-            syncUserWithD1(un, userCats, userSites, getStoredNodes(un));
-          }
-        });
+    fetchUserD1Data(currentUsername || "").then((remote) => {
+      if (remote) {
+        setCategories(remote.categories);
+        setSites(remote.sites);
       }
-    };
-
-    loadAccountData(currentUsername);
-
-    const handleAuthChange = (e: any) => {
-      const un = e.detail?.username !== undefined ? e.detail.username : currentUsername;
-      loadAccountData(un);
-    };
-
-    const handleFocus = () => {
-      if (currentUsername) {
-        fetchUserD1Data(currentUsername).then((cloudData) => {
-          if (cloudData && Array.isArray(cloudData.categories) && cloudData.categories.length > 0) {
-            setCategories(cloudData.categories);
-            if (Array.isArray(cloudData.sites)) setSites(cloudData.sites);
-          }
-        });
-      }
-    };
-
-    window.addEventListener('apexnav_auth_change', handleAuthChange);
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      window.removeEventListener('apexnav_auth_change', handleAuthChange);
-      window.removeEventListener('focus', handleFocus);
-    };
+    });
   }, [currentUsername]);
 
-  // Category & Site handlers (admin-only actions + account D1 cloud sync)
+  const handleImportData = (importedCats: Category[], importedSites: Site[]) => {
+    if (!currentUsername) return;
+    setCategories(importedCats);
+    setSites(importedSites);
+    saveCategories(importedCats, currentUsername);
+    saveSites(importedSites, currentUsername);
+    syncUserWithD1(currentUsername, importedCats, importedSites);
+  };
+
+  const handleResetDefault = () => {
+    if (!currentUsername) return;
+    setCategories(DEFAULT_CATEGORIES);
+    setSites(DEFAULT_SITES);
+    saveCategories(DEFAULT_CATEGORIES, currentUsername);
+    saveSites(DEFAULT_SITES, currentUsername);
+    syncUserWithD1(currentUsername, DEFAULT_CATEGORIES, DEFAULT_SITES);
+  };
+
   const handleAddSite = (newSiteData: Omit<Site, 'id'>) => {
     if (!currentUsername) return;
-    const site: Site = {
+    const newSite: Site = {
       ...newSiteData,
-      id: `site_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `site-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     };
-    const updated = [site, ...sites];
+    const updated = [...sites, newSite];
     setSites(updated);
     saveSites(updated, currentUsername);
     syncUserWithD1(currentUsername, categories, updated);
@@ -179,11 +173,11 @@ function AppInner() {
 
   const handleAddCategory = (newCatData: Omit<Category, 'id'>) => {
     if (!currentUsername) return;
-    const category: Category = {
+    const newCat: Category = {
       ...newCatData,
-      id: `cat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     };
-    const updated = [...categories, category];
+    const updated = [...categories, newCat];
     setCategories(updated);
     saveCategories(updated, currentUsername);
     syncUserWithD1(currentUsername, updated, sites);
@@ -199,32 +193,29 @@ function AppInner() {
 
   const handleDeleteCategory = (id: string) => {
     if (!currentUsername) return;
-    const updatedCats = categories.filter((c) => c.id !== id);
-    const updatedSites = sites.filter((s) => s.category_id !== id);
-    setCategories(updatedCats);
-    setSites(updatedSites);
-    saveCategories(updatedCats, currentUsername);
-    saveSites(updatedSites, currentUsername);
-    syncUserWithD1(currentUsername, updatedCats, updatedSites);
+    const updated = categories.filter((c) => c.id !== id);
+    setCategories(updated);
+    saveCategories(updated, currentUsername);
+    syncUserWithD1(currentUsername, updated, sites);
   };
 
-  const handleImportData = (importedCats: Category[], importedSites: Site[]) => {
+  const handleTogglePin = (site: Site) => {
     if (!currentUsername) return;
-    setCategories(importedCats);
-    setSites(importedSites);
-    saveCategories(importedCats, currentUsername);
-    saveSites(importedSites, currentUsername);
-    syncUserWithD1(currentUsername, importedCats, importedSites);
+    const updated = sites.map((s) =>
+      s.id === site.id ? { ...s, pinned: !s.pinned } : s
+    );
+    setSites(updated);
+    saveSites(updated, currentUsername);
+    syncUserWithD1(currentUsername, categories, updated);
   };
 
-  const handleResetDefault = () => {
-    if (!currentUsername) return;
-    setCategories(DEFAULT_CATEGORIES);
-    setSites(DEFAULT_SITES);
-    saveCategories(DEFAULT_CATEGORIES, currentUsername);
-    saveSites(DEFAULT_SITES, currentUsername);
-    syncUserWithD1(currentUsername, DEFAULT_CATEGORIES, DEFAULT_SITES);
-  };
+  useKeyboardShortcuts({
+    onOpenCommandBar: () => setIsCommandBarOpen(true),
+    onToggleDarkMode: () => setDarkMode(!darkMode),
+    onToggleWidgets: handleToggleWidgets,
+    onOpenSettings: () => setIsSettingsOpen(true),
+    categories,
+  });
 
   const activeWallpaperUrl = APPLE_MACOS_WALLPAPERS[wallpaperIdx % APPLE_MACOS_WALLPAPERS.length];
 
@@ -260,20 +251,28 @@ function AppInner() {
           bingBg={bingBg}
           isAdmin={isAdmin}
           onToggleDarkMode={() => setDarkMode(!darkMode)}
-          onToggleWidgets={handleToggleWidgets}
+          onOpenWidgets={() => setIsWidgetHubOpen(true)}
           onToggleBingBg={handleToggleBingBg}
           onChangeWallpaper={handleChangeWallpaper}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onLoginRequest={() => setIsPinModalOpen(true)}
+          onOpenCommandBar={() => setIsCommandBarOpen(true)}
         />
 
         <SearchHero
           currentEngine={currentEngine}
           sites={sites}
           onChangeEngine={handleChangeEngine}
+          onSearchSubmit={(url: string) => window.open(url, '_blank')}
         />
 
-        {showWidgets && <WidgetsGrid isAdmin={isAdmin} />}
+        {showWidgets && (
+          <WidgetsGrid
+            isAdmin={isAdmin}
+            widgetConfig={widgetConfig}
+            onReorder={handleWidgetConfigChange}
+          />
+        )}
 
         <BookmarkGrid
           categories={categories}
@@ -284,6 +283,8 @@ function AppInner() {
           onDeleteSite={handleDeleteSite}
           onAddCategory={handleAddCategory}
           onDeleteCategory={handleDeleteCategory}
+          onTogglePin={handleTogglePin}
+          onSiteClick={(site) => window.open(site.url, '_blank')}
         />
       </div>
 
@@ -307,6 +308,31 @@ function AppInner() {
         </p>
       </footer>
 
+      {/* Command Bar (Ctrl+K) */}
+      <CommandBar
+        isOpen={isCommandBarOpen}
+        onClose={() => setIsCommandBarOpen(false)}
+        sites={sites}
+        categories={categories}
+        darkMode={darkMode}
+        showWidgets={showWidgets}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
+        onToggleWidgets={handleToggleWidgets}
+        onOpenSettings={() => { setIsSettingsOpen(true); setIsCommandBarOpen(false); }}
+        onChangeEngine={handleChangeEngine}
+        onSiteClick={(site) => window.open(site.url, '_blank')}
+      />
+
+      {/* Standalone Widget Hub Modal */}
+      <WidgetHubModal
+        isOpen={isWidgetHubOpen}
+        onClose={() => setIsWidgetHubOpen(false)}
+        showWidgets={showWidgets}
+        onToggleWidgets={handleToggleWidgets}
+        widgetConfig={widgetConfig}
+        onWidgetConfigChange={handleWidgetConfigChange}
+      />
+
       {/* PIN Login Modal */}
       <PinModal
         isOpen={isPinModalOpen}
@@ -314,7 +340,7 @@ function AppInner() {
         onSuccess={() => setIsPinModalOpen(false)}
       />
 
-      {/* Settings Modal (admin only) */}
+      {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sun, Moon, Settings, Compass, LayoutGrid, Image as ImageIcon, RefreshCw, Clock, Lock } from 'lucide-react';
+import { Sun, Moon, Settings, Compass, LayoutGrid, Image as ImageIcon, RefreshCw, Clock, Lock, Search } from 'lucide-react';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -7,12 +7,14 @@ interface HeaderProps {
   bingBg: boolean;
   isAdmin: boolean;
   onToggleDarkMode: () => void;
-  onToggleWidgets: () => void;
+  onOpenWidgets: () => void;
   onToggleBingBg: () => void;
   onChangeWallpaper: () => void;
   onOpenSettings: () => void;
   onLoginRequest: () => void;
+  onOpenCommandBar: () => void;
 }
+
 
 export const Header: React.FC<HeaderProps> = ({
   darkMode,
@@ -20,12 +22,14 @@ export const Header: React.FC<HeaderProps> = ({
   bingBg,
   isAdmin,
   onToggleDarkMode,
-  onToggleWidgets,
+  onOpenWidgets,
   onToggleBingBg,
   onChangeWallpaper,
   onOpenSettings,
   onLoginRequest,
+  onOpenCommandBar,
 }) => {
+
   const [timeStr, setTimeStr] = useState<string>('');
   const [greeting, setGreeting] = useState<string>('');
 
@@ -80,6 +84,24 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{timeStr}</span>
         </div>
 
+        {/* Ctrl+K Command Bar Trigger */}
+        <button
+          onClick={onOpenCommandBar}
+          className={`p-2.5 sm:p-3 rounded-2xl border shadow-xs hover:shadow-md hover:scale-105 active:scale-95 transition-all duration-200 glass-panel flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${
+            bingBg
+              ? 'bg-white/90 dark:bg-slate-800/90 text-slate-900 dark:text-white border-white/40 dark:border-slate-700'
+              : 'bg-white/70 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-700/60'
+          }`}
+          title="打开命令面板 (Ctrl+K)"
+          aria-label="Open command bar"
+        >
+          <Search className="w-4 h-4" />
+          <span className="hidden lg:flex items-center gap-1">
+            命令
+            <kbd className="text-[10px] font-mono px-1 py-0.5 rounded bg-slate-200/80 dark:bg-slate-700/80 text-slate-500 dark:text-slate-400">Ctrl+K</kbd>
+          </span>
+        </button>
+
         {/* Next Wallpaper Switch Button (Visible when Wallpaper Mode Active) */}
         {bingBg && (
           <button
@@ -110,9 +132,9 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </button>
 
-        {/* Toggle Widgets Button */}
+        {/* Open Widgets Settings Button */}
         <button
-          onClick={onToggleWidgets}
+          onClick={onOpenWidgets}
           className={`p-2.5 sm:p-3 rounded-2xl border shadow-xs hover:shadow-md hover:scale-105 active:scale-95 transition-all duration-200 glass-panel flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${
             showWidgets
               ? 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border-indigo-200/80 dark:border-indigo-800/80'
@@ -120,12 +142,13 @@ export const Header: React.FC<HeaderProps> = ({
               ? 'bg-white/90 dark:bg-slate-800/90 text-slate-900 dark:text-white border-white/40 dark:border-slate-700'
               : 'bg-white/70 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-700/60'
           }`}
-          title={showWidgets ? '隐藏小组件（纯净书签）' : '展开小组件'}
-          aria-label="Toggle widgets"
+          title="小组件管理与定制"
+          aria-label="Manage widgets"
         >
           <LayoutGrid className="w-4 h-4" />
-          <span className="hidden sm:inline">{showWidgets ? '收起组件' : '展开组件'}</span>
+          <span className="hidden sm:inline">小组件</span>
         </button>
+
 
         {/* Theme Toggle Button */}
         <button

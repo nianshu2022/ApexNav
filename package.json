@@ -1,13 +1,16 @@
 {
   "name": "apexnav",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "ApexNav macOS Style Bento NewTab & Web Navigation",
+  "author": "NianShu",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:extension": "vite build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -27,3 +30,4 @@
     "vite": "^8.2.0"
   }
 }
+

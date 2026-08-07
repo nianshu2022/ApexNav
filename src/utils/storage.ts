@@ -1,11 +1,16 @@
-import type { Category, Site, TodoItem } from '../types';
+import type { Category, Site, TodoItem, WidgetConfig, CountdownEvent } from '../types';
+
+
 
 const STORAGE_KEYS = {
   todos: 'apexnav_todos',
   notes: 'apexnav_notes',
   theme: 'apexnav_theme',
   engine: 'apexnav_engine',
+  widgets: 'apexnav_widget_config',
+  countdowns: 'apexnav_countdowns',
 };
+
 
 // ─────────────────────────────────────────────────────────
 // Default demo data (generic, open-source friendly)
@@ -215,4 +220,60 @@ export const fetchUserD1Data = async (
   } catch {
     return null;
   }
+};
+
+// ── Widget Config ──────────────────────────────────────────
+const DEFAULT_WIDGET_CONFIG: WidgetConfig = [
+  { id: 'weather',    enabled: true, order: 0 },
+  { id: 'quote',      enabled: true, order: 1 },
+  { id: 'calendar',   enabled: true, order: 2 },
+  { id: 'status',     enabled: true, order: 3 },
+  { id: 'worldclock', enabled: true, order: 4 },
+  { id: 'countdown',  enabled: true, order: 5 },
+  { id: 'todo',       enabled: true, order: 6 },
+  { id: 'currency',   enabled: true, order: 7 },
+];
+
+
+export const getWidgetConfig = (): WidgetConfig => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.widgets);
+    if (!data) return DEFAULT_WIDGET_CONFIG;
+    const parsed: WidgetConfig = JSON.parse(data);
+    // Merge: ensure all known widget IDs exist (forward-compat with new widgets)
+    const knownIds = DEFAULT_WIDGET_CONFIG.map((w) => w.id);
+    const parsedIds = parsed.map((w) => w.id);
+    const merged = [...parsed];
+    knownIds.forEach((id) => {
+      if (!parsedIds.includes(id)) {
+        const def = DEFAULT_WIDGET_CONFIG.find((w) => w.id === id)!;
+        merged.push(def);
+      }
+    });
+    return merged;
+  } catch {
+    return DEFAULT_WIDGET_CONFIG;
+  }
+};
+
+export const saveWidgetConfig = (config: WidgetConfig): void => {
+  localStorage.setItem(STORAGE_KEYS.widgets, JSON.stringify(config));
+};
+
+// ── Countdown Events ───────────────────────────────────────
+export const DEFAULT_COUNTDOWN_EVENTS: CountdownEvent[] = [
+  { id: 'cde_1', name: '元旦', date: `${new Date().getFullYear() + 1}-01-01`, emoji: '🎆' },
+];
+
+export const getCountdownEvents = (): CountdownEvent[] => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.countdowns);
+    return data ? JSON.parse(data) : DEFAULT_COUNTDOWN_EVENTS;
+  } catch {
+    return DEFAULT_COUNTDOWN_EVENTS;
+  }
+};
+
+export const saveCountdownEvents = (events: CountdownEvent[]): void => {
+  localStorage.setItem(STORAGE_KEYS.countdowns, JSON.stringify(events));
 };

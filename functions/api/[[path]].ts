@@ -41,6 +41,64 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
     );
   }
 
+  // 1.5 POST /api/ai/parse: AI & Smart metadata parser for URLs
+  if (path.endsWith('/ai/parse') && request.method === 'POST') {
+    try {
+      const { url: targetUrl } = await request.json();
+      if (!targetUrl) {
+        return new Response(JSON.stringify({ success: false, message: 'URL is required' }), { headers, status: 400 });
+      }
+
+      let formattedUrl = targetUrl.trim();
+      if (!/^https?:\/\//i.test(formattedUrl)) {
+        formattedUrl = `https://${formattedUrl}`;
+      }
+
+      const domain = new URL(formattedUrl).hostname;
+      const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+
+      let parsedTitle = domain;
+      let parsedDesc = '';
+
+      try {
+        const resp = await fetch(formattedUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ApexNav/1.0' },
+          signal: AbortSignal.timeout(3500),
+        });
+        if (resp.ok) {
+          const text = await resp.text();
+          const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+          if (titleMatch && titleMatch[1]) {
+            parsedTitle = titleMatch[1].trim();
+          }
+          const descMatch = text.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+                            text.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
+          if (descMatch && descMatch[1]) {
+            parsedDesc = descMatch[1].trim();
+          }
+        }
+      } catch {
+        const namePart = domain.replace(/^www\./i, '').split('.')[0];
+        parsedTitle = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            name: parsedTitle.length > 40 ? parsedTitle.slice(0, 40) + '...' : parsedTitle,
+            description: parsedDesc.length > 90 ? parsedDesc.slice(0, 90) + '...' : parsedDesc,
+            icon: faviconUrl,
+            domain,
+          },
+        }),
+        { headers }
+      );
+    } catch (err: any) {
+      return new Response(JSON.stringify({ success: false, error: err.message }), { headers, status: 500 });
+    }
+  }
+
   try {
     // Ensure D1 database tables exist if D1 is bound
     if (env.DB) {

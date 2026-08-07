@@ -1,13 +1,15 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+
 import {
   X, Download, Upload, RefreshCw, Database, CheckCircle2,
   Shield, Info, Eye, EyeOff, LogOut, KeyRound, Trash2,
   Layers, Plus, Edit3, Search, ExternalLink, AlertTriangle,
-  FolderPlus, Globe, Sparkles, Server, ArrowRight, ChevronDown, Check
+  FolderPlus, Globe, Sparkles, Server, ArrowRight, ChevronDown, Check,
 } from 'lucide-react';
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { syncUserWithD1, fetchUserD1Data } from '../utils/storage';
+
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -25,6 +27,9 @@ interface SettingsModalProps {
 }
 
 type Tab = 'sites' | 'categories' | 'cloud' | 'security' | 'about';
+
+
+
 
 interface ConfirmModalState {
   isOpen: boolean;
@@ -122,9 +127,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onEditCategory,
   onDeleteCategory,
 }) => {
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('sites');
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab('sites');
+    }
+  }, [isOpen]);
 
   // Search & Filter state for site management
   const [selectedCatId, setSelectedCatId] = useState<string>('all');
@@ -403,6 +415,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { key: 'about', label: '关于 ApexNav', icon: <Info className="w-4 h-4" /> },
   ];
 
+
+
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6 z-50 animate-in fade-in duration-200">
       {/* Main Container (macOS Double-Pane Layout) */}
@@ -602,16 +616,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">网站 URL 地址 *</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">网站 URL 地址 *</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!siteForm.url.trim()) return;
+                              let urlStr = siteForm.url.trim();
+                              if (!/^https?:\/\//i.test(urlStr)) {
+                                urlStr = `https://${urlStr}`;
+                              }
+                              try {
+                                const parsedUrl = new URL(urlStr);
+                                const domain = parsedUrl.hostname;
+                                const hdIcon = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
+                                const derivedName = siteForm.name.trim() || domain.replace(/^www\./, '').split('.')[0].toUpperCase();
+                                setSiteForm({
+                                  ...siteForm,
+                                  url: urlStr,
+                                  name: siteForm.name.trim() || derivedName,
+                                  icon: hdIcon,
+                                });
+                                showMsg('✨ AI 智能抓取网站 Favicon 与信息成功！', 'success');
+                              } catch {
+                                showMsg('请填写有效的 URL 网址格式', 'error');
+                              }
+                            }}
+                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            AI 智能识别
+                          </button>
+                        </div>
                         <input
                           type="text"
                           required
                           value={siteForm.url}
                           onChange={(e) => setSiteForm({ ...siteForm, url: e.target.value })}
-                          placeholder="github.com"
+                          onBlur={() => {
+                            if (siteForm.url.trim() && !siteForm.icon.trim()) {
+                              let urlStr = siteForm.url.trim();
+                              if (!/^https?:\/\//i.test(urlStr)) urlStr = `https://${urlStr}`;
+                              try {
+                                const parsedUrl = new URL(urlStr);
+                                const domain = parsedUrl.hostname;
+                                const hdIcon = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
+                                setSiteForm((prev) => ({ ...prev, icon: hdIcon }));
+                              } catch {}
+                            }
+                          }}
+                          placeholder="github.com 或 https://github.com"
                           className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
+
 
                       <div>
                         <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">所属分类 *</label>

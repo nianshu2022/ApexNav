@@ -129,9 +129,10 @@ export const QuoteCard: React.FC = () => {
   };
 
   return (
-    <div className="p-4 rounded-3xl bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-rose-500/10 dark:from-purple-900/20 dark:via-pink-900/15 dark:to-rose-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 min-h-[165px] relative">
-      {/* Header Bar: Icon, Title & Category Pills */}
-      <div className="flex items-center justify-between mb-1">
+    <div className="p-4 rounded-3xl bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-rose-500/10 dark:from-purple-900/20 dark:via-pink-900/15 dark:to-rose-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
+
+      {/* Header Bar: Icon, Title & Category Pills (Locked shrink-0) */}
+      <div className="flex items-center justify-between mb-1 shrink-0">
         <div className="flex items-center space-x-1.5">
           <QuoteIcon className="w-4 h-4 text-purple-500 shrink-0" />
           <span className="font-heading font-bold text-slate-800 dark:text-slate-200 text-sm">
@@ -157,20 +158,24 @@ export const QuoteCard: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Bilingual Quote Content Block */}
-      <div className="my-1.5 flex-1 flex flex-col justify-between">
-        <div className="space-y-1">
+      {/* Main Bilingual Quote Content Block (Flex-1 overflow-hidden min-h-0) */}
+      <div className="flex-1 flex flex-col justify-center min-h-0 overflow-hidden my-1">
+        <div className="space-y-0.5">
           <p
             style={{
               fontFamily: "'STXingkai', '华文行楷', 'Xingkai SC', 'FZShuTi', '方正舒体', 'STKaiti', 'KaiTi', cursive, serif",
             }}
-            className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white leading-relaxed tracking-wider px-0.5"
+            className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug tracking-wide line-clamp-2 px-0.5"
+            title={quote.hitokoto}
           >
             “{quote.hitokoto}”
           </p>
 
           {quote.enText && (
-            <p className="text-xs sm:text-[13px] font-sans font-medium italic text-slate-600 dark:text-slate-300 leading-snug tracking-normal px-0.5 opacity-90">
+            <p
+              className="text-[10px] font-sans font-medium italic text-slate-500 dark:text-slate-400 leading-tight line-clamp-2 px-0.5 opacity-85"
+              title={quote.enText}
+            >
               "{quote.enText}"
             </p>
           )}
@@ -180,17 +185,17 @@ export const QuoteCard: React.FC = () => {
           style={{
             fontFamily: "'STXingkai', '华文行楷', 'Xingkai SC', 'STKaiti', 'KaiTi', cursive, serif",
           }}
-          className="text-xs text-right text-purple-600 dark:text-purple-400 font-extrabold mt-1.5"
+          className="text-[11px] text-right text-purple-600 dark:text-purple-400 font-extrabold truncate mt-0.5 shrink-0"
         >
           {quote.from}
         </p>
       </div>
 
-      {/* Action Footer Bar */}
-      <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400 pt-1.5 border-t border-slate-200/40 dark:border-slate-800/40">
+      {/* Action Footer Bar (Locked shrink-0) */}
+      <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/40 dark:border-slate-800/40 shrink-0">
         <button
           onClick={handleToggleFavorite}
-          className={`flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${
             isCurrentFavorited
               ? 'bg-rose-500 text-white'
               : 'bg-white/50 dark:bg-slate-800/50 hover:bg-rose-50 text-slate-600 dark:text-slate-300 hover:text-rose-500'

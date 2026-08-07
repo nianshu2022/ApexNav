@@ -1,6 +1,7 @@
 # 🍏 ApexNav (极简苹果风个人/公共导航主页)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI Workflow](https://github.com/nianshu2022/ApexNav/actions/workflows/ci.yml/badge.svg)](https://github.com/nianshu2022/ApexNav/actions)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 [![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-orange.svg)](https://pages.cloudflare.com/)
@@ -17,6 +18,7 @@ ApexNav 是一款基于 **React 19 + TypeScript + Tailwind CSS v4 + Cloudflare P
 
 - 🔒 [**SECURITY.md**](SECURITY.md)：零信任安全架构、Cloudflare Secrets 托管、访问控制矩阵与安全部署规范。
 - 🏗️ [**ARCHITECTURE.md**](ARCHITECTURE.md)：系统架构视图、Cloudflare D1 数据双向同步链路、离线降级策略与模块职责划分。
+- 🤝 [**CONTRIBUTING.md**](CONTRIBUTING.md)：开源社区贡献指南、开发环境配置与 PR 提交规范。
 
 ---
 
@@ -77,6 +79,7 @@ sequenceDiagram
   - 💬 **一言 Poetry 语录**：包含动漫、诗词、哲学分类，支持收藏与一键刷新。
   - 📅 **极简月历组件**：高清月视图与当前日期高亮。
   - ⚡ **节点运行监控**：支持节点 Ping 延迟测试与在线率统计。
+- 🤖 **✨ AI 智能网址解析**：添加书签时支持一键抓取与智能提取网页标题、自动匹配 64px Favicon 与描述文本。
 - 📦 **本地优先 & 一键备份**：优先存储于浏览器 `localStorage`，支持一键导出为 JSON 备份文件及随时导入还原。
 
 ---
@@ -165,6 +168,16 @@ npm run build
 
 ---
 
+## 🤖 AI 智能化支持与 OpenAI/Codex 路线图
+
+ApexNav 致力于构建智能化的开源个人/团队控制台系统：
+
+- [x] **✨ 智能网页元数据提取**：通过 `/api/ai/parse` 接口实现轻量级网页 Title、Description 及Favicon 自动提取。
+- [ ] **🏷️ AI 自动标签分类 (Auto-Tagging)**：调用 OpenAI API 对新增书签根据内容自动分类与打标。
+- [ ] **🔍 语义化智能搜索 (Semantic Search)**：允许用户通过自然语言（例如“找一下上次保存的 React 状态管理库”）进行精准书签定位。
+
+---
+
 ## 📄 开源协议 (License)
 
-本项目采用 [MIT License](LICENSE) 协议开源。欢迎 Star、Fork 与提交 PR！
+本项目采用 [MIT License](LICENSE) 协议开源。欢迎 Star、Fork 与提交 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。

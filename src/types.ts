@@ -6,6 +6,7 @@ export interface Site {
   icon?: string;
   description?: string;
   sort_order?: number;
+  pinned?: boolean;
 }
 
 export interface Category {
@@ -48,4 +49,41 @@ export interface HotListItem {
   title: string;
   url: string;
   hot: string;
+}
+
+// ── Widget System ────────────────────────────────────────
+export type WidgetId =
+  | 'weather'
+  | 'quote'
+  | 'calendar'
+  | 'status'
+  | 'worldclock'
+  | 'countdown'
+  | 'todo'
+  | 'currency';
+
+
+export interface WidgetItem {
+  id: WidgetId;
+  enabled: boolean;
+  order: number;
+}
+
+export type WidgetConfig = WidgetItem[];
+
+export interface CountdownEvent {
+  id: string;
+  name: string;
+  date: string; // ISO date string 'YYYY-MM-DD'
+  emoji?: string;
+}
+
+export interface BrowserTab {
+  id: string;
+  title: string;
+  url: string;
+  icon?: string;
+  isLoading?: boolean;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
 }

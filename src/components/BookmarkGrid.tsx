@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Globe, ExternalLink, Layers, X } from 'lucide-react';
+import { Plus, Globe, ExternalLink, Layers, X, Sparkles, Loader2, Pin, PinOff } from 'lucide-react';
 import type { Category, Site } from '../types';
 
 interface BookmarkGridProps {
@@ -11,6 +11,8 @@ interface BookmarkGridProps {
   onDeleteSite?: (id: string) => void;
   onAddCategory: (category: Omit<Category, 'id'>) => void;
   onDeleteCategory?: (id: string) => void;
+  onTogglePin: (site: Site) => void;
+  onSiteClick?: (site: Site) => void;
 }
 
 export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
@@ -20,7 +22,11 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
   onAddSite,
   onEditSite,
   onAddCategory,
+  onTogglePin,
+  onSiteClick,
 }) => {
+
+
   const [activeCategoryId, setActiveCategoryId] = useState<string>(() => {
     return categories.length > 0 ? categories[0].id : '';
   });
@@ -39,6 +45,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
 
   const [isSiteModalOpen, setIsSiteModalOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [isAiParsing, setIsAiParsing] = useState(false);
 
   const [siteForm, setSiteForm] = useState({
     name: '',
@@ -48,6 +55,31 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
     category_id: activeCategoryId || (categories[0]?.id || ''),
   });
 
+  const handleAiParse = async () => {
+    if (!siteForm.url.trim() || isAiParsing) return;
+    setIsAiParsing(true);
+    try {
+      const res = await fetch('/api/ai/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: siteForm.url.trim() }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setSiteForm((prev) => ({
+          ...prev,
+          name: json.data.name || prev.name,
+          description: json.data.description || prev.description,
+          icon: json.data.icon || prev.icon,
+        }));
+      }
+    } catch (err) {
+      console.error('AI parse error:', err);
+    } finally {
+      setIsAiParsing(false);
+    }
+  };
+
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCatForm, setNewCatForm] = useState({
     name: '',
@@ -55,6 +87,21 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
   });
 
   const filteredSites = sites.filter((s) => s.category_id === activeCategoryId);
+  const pinnedSites = sites.filter((s) => s.pinned);
+
+  // Listen for CommandBar jump-to-category events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail?.id;
+      if (id && categories.some((c) => c.id === id)) {
+        setActiveCategoryId(id);
+        // Smooth-scroll to the bookmark section
+        document.querySelector('#bookmark-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    window.addEventListener('apexnav_jump_category', handler);
+    return () => window.removeEventListener('apexnav_jump_category', handler);
+  }, [categories]);
 
   const handleOpenAddModal = (siteToEdit?: Site) => {
     if (siteToEdit) {
@@ -132,7 +179,49 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
   };
 
   return (
-    <section className="w-full max-w-7xl mx-auto px-4 my-6 sm:my-8">
+    <section id="bookmark-section" className="w-full max-w-7xl mx-auto px-4 my-6 sm:my-8">
+
+      {/* ── Pinned Sites Row ─────────────────────────────────────────────── */}
+      {pinnedSites.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Pin className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">常用书签</span>
+            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-600">({pinnedSites.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {pinnedSites.map((site) => (
+              <div key={`pin-${site.id}`} className="group/pin relative flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-700/40 shadow-xs hover:shadow-md hover:border-amber-400/60 dark:hover:border-amber-500/50 transition-all duration-200 hover:-translate-y-0.5">
+                <a
+                  href={site.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 min-w-0"
+                >
+                  <div className="w-5 h-5 rounded-lg overflow-hidden shrink-0 flex items-center justify-center bg-white dark:bg-slate-800 border border-amber-200/60 dark:border-amber-700/40">
+                    {site.icon ? (
+                      <img src={site.icon} alt={site.name} className="w-full h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{site.name.charAt(0)}</span>
+                    )}
+                  </div>
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate max-w-[120px]">{site.name}</span>
+                </a>
+                {isAdmin && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onTogglePin(site); }}
+                    className="opacity-0 group-hover/pin:opacity-100 p-0.5 rounded-full text-amber-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all cursor-pointer"
+                    title="取消置顶"
+                  >
+                    <PinOff className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 border-t border-slate-100 dark:border-slate-800/60" />
+        </div>
+      )}
       {/* Category Tabs Bar */}
       <div className="flex items-center justify-between gap-3 mb-6 overflow-x-auto pb-2 scrollbar-none">
         <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0 overflow-visible pt-2">
@@ -226,15 +315,27 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
           filteredSites.map((site) => (
             <div
               key={site.id}
-              className="group relative px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-white/80 dark:bg-slate-800/90 border border-slate-200/60 dark:border-slate-600/50 shadow-xs hover:shadow-xl hover:border-indigo-500/40 dark:hover:border-indigo-400/50 dark:shadow-slate-900/50 glass-card transition-all duration-300 ease-out hover:-translate-y-1.5 flex items-center min-w-0"
+              className={`group relative px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-white/80 dark:bg-slate-800/90 border shadow-xs hover:shadow-xl dark:shadow-slate-900/50 glass-card transition-all duration-300 ease-out hover:-translate-y-1.5 flex items-center min-w-0 ${
+                site.pinned
+                  ? 'border-amber-300/60 dark:border-amber-600/40 hover:border-amber-400/70 dark:hover:border-amber-500/60'
+                  : 'border-slate-200/60 dark:border-slate-600/50 hover:border-indigo-500/40 dark:hover:border-indigo-400/50'
+              }`}
             >
               {/* Left Side: Icon + Text Clickable Link */}
               <a
                 href={site.url}
-                target="_blank"
+                target={typeof window !== 'undefined' && (window as any).electronAPI ? '_self' : '_blank'}
                 rel="noopener noreferrer"
-                className="flex items-center gap-3 min-w-0 w-full group/link"
+                onClick={(e) => {
+                  if (typeof window !== 'undefined' && (window as any).electronAPI && onSiteClick) {
+                    e.preventDefault();
+                    onSiteClick(site);
+                  }
+                }}
+                className="flex items-center gap-3 min-w-0 w-full group/link cursor-pointer"
               >
+
+
                 {/* Icon Badge Container */}
                 <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-slate-100/90 dark:bg-slate-700/80 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-600/80 shadow-2xs group-hover/link:scale-110 group-hover/link:rotate-3 transition-transform duration-300 ease-out p-1.5">
                   {site.icon ? (
@@ -262,6 +363,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover/link:text-indigo-600 dark:group-hover/link:text-indigo-400 truncate leading-tight transition-colors">
                       {site.name}
                     </h3>
+                    {site.pinned && <Pin className="w-2.5 h-2.5 text-amber-400 shrink-0" />}
                     <ExternalLink className="w-3 h-3 text-slate-400 opacity-0 group-hover/link:opacity-100 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-all shrink-0" />
                   </div>
                   <p className="text-[11px] font-mono text-slate-500 dark:text-slate-300 truncate leading-tight mt-0.5 group-hover/link:text-slate-700 dark:group-hover/link:text-slate-100">
@@ -270,6 +372,20 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                 </div>
               </a>
 
+              {/* Pin / Unpin button — admin only, appears on hover */}
+              {isAdmin && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onTogglePin(site); }}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-xl transition-all duration-200 cursor-pointer hover:scale-110 active:scale-95 z-10"
+                  title={site.pinned ? '取消置顶' : '置顶到常用栏'}
+                >
+                  {site.pinned ? (
+                    <PinOff className="w-3.5 h-3.5 text-amber-500" />
+                  ) : (
+                    <Pin className="w-3.5 h-3.5 text-slate-400 hover:text-amber-500" />
+                  )}
+                </button>
+              )}
             </div>
           ))
         )}
@@ -323,9 +439,24 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  网站 URL *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    网站 URL *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAiParse}
+                    disabled={!siteForm.url.trim() || isAiParsing}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:opacity-40 transition-colors cursor-pointer"
+                  >
+                    {isAiParsing ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    )}
+                    {isAiParsing ? '解析中...' : '✨ AI 智能抓取标题与图标'}
+                  </button>
+                </div>
                 <input
                   type="text"
                   required

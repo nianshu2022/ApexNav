@@ -4,7 +4,35 @@ import { saveCategories, saveSites, saveNodes, syncUserWithD1 } from '../utils/s
 const STORAGE_KEY_PW_PREFIX = 'apexnav_auth_pw_';
 const STORAGE_KEY_UN_PREFIX = 'apexnav_auth_un_';
 const STORAGE_KEY_DISPLAY_UN = 'apexnav_username_display';
-const SESSION_KEY_IS_ADMIN = 'apexnav_is_admin';
+// ↓ 改用 localStorage（持久化 + 跨 Tab 共享），取代原来的 sessionStorage
+const LS_KEY_IS_ADMIN = 'apexnav_is_admin';
+const LS_KEY_AUTH_EXPIRES = 'apexnav_auth_expires';
+const AUTH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 天
+
+/** 检查登录态是否仍在有效期内 */
+function isAuthValid(): boolean {
+  if (localStorage.getItem(LS_KEY_IS_ADMIN) !== 'true') return false;
+  const exp = Number(localStorage.getItem(LS_KEY_AUTH_EXPIRES) || '0');
+  if (!exp || Date.now() > exp) {
+    // 已过期，清除
+    localStorage.removeItem(LS_KEY_IS_ADMIN);
+    localStorage.removeItem(LS_KEY_AUTH_EXPIRES);
+    return false;
+  }
+  return true;
+}
+
+/** 写入登录态，重置过期时间 */
+function persistAuth(): void {
+  localStorage.setItem(LS_KEY_IS_ADMIN, 'true');
+  localStorage.setItem(LS_KEY_AUTH_EXPIRES, String(Date.now() + AUTH_TTL_MS));
+}
+
+/** 清除登录态 */
+function clearAuth(): void {
+  localStorage.removeItem(LS_KEY_IS_ADMIN);
+  localStorage.removeItem(LS_KEY_AUTH_EXPIRES);
+}
 
 async function hash(str: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -44,12 +72,10 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    return sessionStorage.getItem(SESSION_KEY_IS_ADMIN) === 'true';
-  });
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => isAuthValid());
 
   const [currentUsername, setCurrentUsername] = useState<string | null>(() => {
-    if (sessionStorage.getItem(SESSION_KEY_IS_ADMIN) === 'true') {
+    if (isAuthValid()) {
       const displayUn = localStorage.getItem(STORAGE_KEY_DISPLAY_UN);
       return (displayUn && displayUn !== 'null' && displayUn !== 'undefined') ? displayUn : 'admin';
     }
@@ -69,6 +95,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       })
       .catch(() => {});
+  }, []);
+
+  // 跨 Tab 登录态同步：监听 localStorage storage 事件
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === LS_KEY_IS_ADMIN) {
+        const nowValid = isAuthValid();
+        setIsAdmin(nowValid);
+        if (nowValid) {
+          const displayUn = localStorage.getItem(STORAGE_KEY_DISPLAY_UN);
+          const un = (displayUn && displayUn !== 'null' && displayUn !== 'undefined') ? displayUn : 'admin';
+          setCurrentUsername(un);
+          window.dispatchEvent(new CustomEvent('apexnav_auth_change', { detail: { username: un } }));
+        } else {
+          setCurrentUsername(null);
+          window.dispatchEvent(new CustomEvent('apexnav_auth_change', { detail: { username: null } }));
+        }
+      }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
   }, []);
 
   /** Register or setup an account with username + password */
@@ -101,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       /* Local fallback */
     }
 
-    sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
+    persistAuth();
     setCurrentUsername(cleanUn);
     setIsAdmin(true);
 
@@ -144,7 +191,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem(`${STORAGE_KEY_PW_PREFIX}${authenticatedUser.toLowerCase()}`, inputPwHash);
             localStorage.setItem(STORAGE_KEY_DISPLAY_UN, authenticatedUser);
 
-            sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
+            persistAuth();
             setCurrentUsername(authenticatedUser);
             setIsAdmin(true);
 
@@ -177,7 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       localStorage.setItem(STORAGE_KEY_DISPLAY_UN, cleanUn);
-      sessionStorage.setItem(SESSION_KEY_IS_ADMIN, 'true');
+      persistAuth();
       setCurrentUsername(cleanUn);
       setIsAdmin(true);
 
@@ -190,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(() => {
-    sessionStorage.removeItem(SESSION_KEY_IS_ADMIN);
+    clearAuth();
     setIsAdmin(false);
     setCurrentUsername(null);
 

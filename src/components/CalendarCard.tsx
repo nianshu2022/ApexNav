@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+
 
 const HOLIDAYS: Record<string, string> = {
   '1-1': '元旦节',
@@ -80,34 +81,34 @@ export const CalendarCard: React.FC = () => {
   }
 
   return (
-    <div className="p-3.5 sm:p-4 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-cyan-500/10 dark:from-emerald-900/20 dark:via-teal-900/15 dark:to-cyan-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 min-h-[165px] relative">
+    <div className="p-4 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-cyan-500/10 dark:from-emerald-900/20 dark:via-teal-900/15 dark:to-cyan-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
+
       {/* Calendar Header (Enlarged Month Title) */}
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center space-x-1.5">
-          <CalendarIcon className="w-4 h-4 text-emerald-500" />
-          <span className="font-heading font-extrabold text-slate-900 dark:text-white text-sm sm:text-base">
+          <CalendarIcon className="w-3.5 h-3.5 text-emerald-500" />
+          <span className="font-heading font-extrabold text-slate-900 dark:text-white text-xs sm:text-sm">
             {year}年 {monthNames[month]}
           </span>
         </div>
         <div className="flex items-center space-x-1">
           <button
             onClick={handlePrevMonth}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+            className="p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
             title="上个月"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={handleResetToday}
-            className="px-2 py-0.5 rounded-lg text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-white/60 dark:bg-slate-800/60 hover:bg-white border border-emerald-500/20 transition-colors cursor-pointer"
+            className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-white/60 dark:bg-slate-800/60 border border-emerald-500/20 transition-colors cursor-pointer leading-none"
             title="返回今天"
           >
-            <RotateCcw className="w-3 h-3 inline mr-0.5" />
             今天
           </button>
           <button
             onClick={handleNextMonth}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+            className="p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
             title="下个月"
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -115,12 +116,12 @@ export const CalendarCard: React.FC = () => {
         </div>
       </div>
 
-      {/* Weekday Labels Header (Enlarged to 12px) */}
-      <div className="grid grid-cols-7 gap-0.5 text-center my-1">
+      {/* Weekday Labels Header */}
+      <div className="grid grid-cols-7 gap-0.5 text-center mt-1 mb-0.5 shrink-0">
         {weekDays.map((wd, i) => (
           <span
             key={wd}
-            className={`text-xs font-black ${
+            className={`text-[10px] font-black ${
               i === 0 || i === 6
                 ? 'text-rose-500 dark:text-rose-400'
                 : 'text-slate-500 dark:text-slate-400'
@@ -131,11 +132,11 @@ export const CalendarCard: React.FC = () => {
         ))}
       </div>
 
-      {/* Days Grid - Enlarged Numbers to 12px-14px */}
-      <div className="grid grid-cols-7 gap-1 text-center my-0.5 flex-1">
+      {/* Days Grid - Fully Visible Compact Cells */}
+      <div className="grid grid-cols-7 gap-0.5 text-center flex-1 min-h-0 items-center">
         {calendarCells.map((dayNum, idx) => {
           if (dayNum === null) {
-            return <div key={`empty_${idx}`} className="h-5.5 sm:h-6" />;
+            return <div key={`empty_${idx}`} className="h-4.5" />;
           }
 
           const todayFlag = isToday(dayNum);
@@ -144,7 +145,7 @@ export const CalendarCard: React.FC = () => {
           return (
             <div
               key={dayNum}
-              className={`h-5.5 sm:h-6 flex flex-col items-center justify-center rounded-lg text-xs sm:text-sm font-extrabold transition-colors relative overflow-hidden ${
+              className={`h-4.5 flex flex-col items-center justify-center rounded-md text-[10px] font-extrabold transition-colors relative overflow-hidden ${
                 todayFlag
                   ? 'bg-emerald-600 text-white font-black shadow-sm scale-105 z-10'
                   : event?.isHoliday
@@ -160,15 +161,12 @@ export const CalendarCard: React.FC = () => {
               }
             >
               <span className="leading-none">{dayNum}</span>
-              {event && !todayFlag && (
-                <span className="text-[8px] leading-none tracking-tighter truncate max-w-full font-bold scale-90">
-                  {event.text.replace(/节$/, '')}
-                </span>
-              )}
             </div>
           );
         })}
       </div>
     </div>
   );
+
+
 };
