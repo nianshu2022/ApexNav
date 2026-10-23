@@ -1,5 +1,6 @@
 import { currentApiBase } from './authSession';
 import type { Category, Site } from '../types';
+import { safeWebUrl } from '../../shared/navigation';
 
 export interface SyncFields { categories?: Category[]; sites?: Site[]; nodes?: any[] }
 export interface PendingWrite {
@@ -35,6 +36,27 @@ export function getInvalidCloudSnapshot(username: string, base = currentApiBase(
   const raw = localStorage.getItem(`${prefix(username, base)}:invalid-cloud-recovery`);
   if (!raw) return null;
   try { return JSON.parse(raw) as InvalidCloudSnapshot; } catch { return null; }
+}
+
+export function describeInvalidCloudUrls(snapshot: InvalidCloudSnapshot): string[] {
+  const issues: string[] = [];
+  const inspect = (items: unknown, kind: string, fields: string[]) => {
+    if (!Array.isArray(items)) return;
+    items.forEach((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+      const record = item as Record<string, unknown>;
+      const name = typeof record.name === 'string' ? record.name.slice(0, 60) : String(index + 1);
+      for (const field of fields) {
+        const value = record[field];
+        if (field === 'icon' && (value === undefined || value === '' || typeof value === 'string' && /^data:image\/(?:png|jpeg|jpg|gif|webp|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/=\s]+$/i.test(value))) continue;
+        try { safeWebUrl(value); }
+        catch { issues.push(`${kind}「${name}」的${field === 'icon' ? '图标地址' : '网址'}`); }
+      }
+    });
+  };
+  inspect(snapshot.sites, '书签', ['url', 'icon']);
+  inspect(snapshot.nodes, '监控节点', ['url']);
+  return issues.slice(0, 20);
 }
 
 export function quarantineCloudData(username: string, data: Record<string, unknown>, reason: string, base = currentApiBase()): void {

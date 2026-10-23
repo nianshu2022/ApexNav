@@ -8,12 +8,12 @@ import {
 } from 'lucide-react';
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { syncUserWithD1, fetchUserD1Data, getApiBaseUrl, saveApiBaseUrl, resolveCloudConflict, getStoredNodes } from '../utils/storage';
+import { syncUserWithD1, fetchUserD1Data, getApiBaseUrl, saveApiBaseUrl, resolveCloudConflict, repairInvalidCloudData, getStoredNodes } from '../utils/storage';
 import { downloadInvalidCloudSnapshot, downloadWorkspaceBackup } from '../utils/backup';
 import type { BackupExtras } from '../utils/backup';
-import { hasInvalidCloudData, pendingWrites } from '../utils/syncState';
+import { describeInvalidCloudUrls, getInvalidCloudSnapshot, hasInvalidCloudData, pendingWrites } from '../utils/syncState';
 import { hasLegacyProfile, importLegacyProfile } from '../utils/profileStorage';
-import { MAX_BACKUP_BYTES } from '../../shared/navigation';
+import { MAX_BACKUP_BYTES, validateNavigation, validateNodes } from '../../shared/navigation';
 import { PREFERENCE_EVENT, usePreferences } from '../utils/preferences';
 import { matchSite } from '../utils/searchMatcher';
 import { CategoryIcon, CategoryIconPicker } from './SvgIcon';
@@ -145,6 +145,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cloudRepairInputRef = useRef<HTMLInputElement>(null);
   const preferences = usePreferences();
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('sites');
@@ -216,6 +217,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
 
   const { logout, changeCredentials, currentUsername, isEnvAuth } = useAuth();
+  const invalidSnapshot = currentUsername ? getInvalidCloudSnapshot(currentUsername) : null;
+  const invalidUrlIssues = invalidSnapshot ? describeInvalidCloudUrls(invalidSnapshot) : [];
 
   if (!isOpen) return null;
 
@@ -444,6 +447,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           showMsg('同步冲突已处理，个人小组件保持不变', 'success');
         } catch (error) { showMsg(error instanceof Error ? error.message : '处理失败', 'error'); }
       }, true, '确认处理');
+  };
+
+  const handleCloudRepairFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !currentUsername) return;
+    try {
+      if (file.size > MAX_BACKUP_BYTES) throw new Error('修复文件不能超过 8 MB');
+      const edited = JSON.parse(await file.text()) as Record<string, unknown>;
+      const original = getInvalidCloudSnapshot(currentUsername);
+      if (!original || !edited || typeof edited !== 'object' || Array.isArray(edited) || edited.version !== original.version) {
+        throw new Error('请使用刚下载的云端原始数据 JSON 文件，并保留其中的 version');
+      }
+      const navigation = validateNavigation(edited.categories, edited.sites, true);
+      const nodes = validateNodes(edited.nodes);
+      askConfirm('提交修复后的云端数据',
+        `已校验 ${navigation.categories.length} 个分类、${navigation.sites.length} 个网址和 ${nodes.length} 个监控节点。提交前会再次核对云端版本，并自动下载原始快照；本地待同步修改会保留。`, async () => {
+          try {
+            downloadInvalidCloudSnapshot(currentUsername);
+            const repaired = await repairInvalidCloudData(currentUsername, edited);
+            if (!repaired.localEditsPending) onImportData(repaired.categories, repaired.sites, false, { nodes: repaired.nodes });
+            showMsg(repaired.localEditsPending ? '云端旧数据已修复；本地待同步修改仍保留，请继续处理同步冲突。' : '云端数据已修复并加载。', 'success');
+          } catch (error) { showMsg(error instanceof Error ? error.message : '云端修复失败，原始数据已保留', 'error'); }
+        }, true, '核对并提交');
+    } catch (error) { showMsg(error instanceof Error ? error.message : '修复文件无效', 'error'); }
   };
 
   // Change credentials
@@ -1009,11 +1037,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {currentUsername && hasInvalidCloudData(currentUsername) && (
                   <div role="alert" className="p-4 rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 space-y-3 text-sm">
                     <p>云端书签或监控节点包含不符合当前规则的网址或图标地址。登录已恢复，但自动同步已暂停，云端原始数据不会被覆盖。</p>
-                    <p>请先保存原始数据，再检查其中的网址；修复云端数据后可点击下方“从云端数据库拉取最新”。</p>
+                    <p>校验提示：{invalidSnapshot?.reason || '云端数据格式无效'}。请先下载原始 JSON，修正其中的网址或图标地址，保留 version 和其他记录，再选择修复后的文件。</p>
+                    {invalidUrlIssues.length > 0 && <p>需检查：{invalidUrlIssues.join('、')}</p>}
                     <button type="button" className="underline cursor-pointer" onClick={() => {
                       try { downloadInvalidCloudSnapshot(currentUsername); showMsg('已发起云端原始数据下载，请确认文件已保存。', 'success'); }
                       catch (error) { showMsg(error instanceof Error ? error.message : '原始数据下载失败', 'error'); }
                     }}>下载云端原始数据</button>
+                    <span className="mx-2 text-amber-500">·</span>
+                    <button type="button" className="underline cursor-pointer" onClick={() => cloudRepairInputRef.current?.click()}>选择修复后的 JSON</button>
+                    <input ref={cloudRepairInputRef} type="file" accept=".json,application/json" className="hidden" aria-label="选择修复后的云端 JSON" onChange={(event) => { void handleCloudRepairFile(event); }} />
                   </div>
                 )}
                 {/* Extension & Remote Endpoint Configuration Card */}
@@ -1084,6 +1116,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <button
                         onClick={async () => {
+                          if (hasInvalidCloudData(currentUsername)) {
+                            showMsg('云端原始数据校验失败，同步已暂停。请先下载并修正原始 JSON，再提交修复。', 'error');
+                            return;
+                          }
                           showMsg('正在从 Cloudflare D1 拉取最新云端数据...', 'success');
                           const cloudData = await fetchUserD1Data(currentUsername);
                           if (cloudData && Array.isArray(cloudData.categories)) {

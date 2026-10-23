@@ -1,9 +1,9 @@
-import { getInvalidCloudSnapshot, hasInvalidCloudData, rememberCloudVersion, pendingWrites, syncStatus } from '../src/utils/syncState';
+import { describeInvalidCloudUrls, enqueueWrite, getInvalidCloudSnapshot, hasInvalidCloudData, quarantineCloudData, rememberCloudVersion, pendingWrites, syncStatus } from '../src/utils/syncState';
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deferred, installBrowser } from './helpers';
 import { clearAuthSession, getAuthSession, saveAuthSession } from '../src/utils/authSession';
-import { retryPendingSync, fetchUserD1Data, getStoredSites, getStoredCategories, getCountdownEvents, saveApiBaseUrl, saveSites, syncNodesWithD1, syncUserWithD1 } from '../src/utils/storage';
+import { retryPendingSync, fetchUserD1Data, getStoredSites, getStoredCategories, getCountdownEvents, repairInvalidCloudData, saveApiBaseUrl, saveSites, syncNodesWithD1, syncUserWithD1 } from '../src/utils/storage';
 import { exportProfile, validateProfile } from '../src/utils/profileStorage';
 
 const session = (username = 'alice') => ({ username, token: `token-${username}`, expiresAt: Date.now() + 60_000, apiBaseUrl: '' });
@@ -222,4 +222,67 @@ test('a later valid cloud read releases the quarantine without discarding its re
   assert.deepEqual((await fetchUserD1Data('alice'))?.sites, []);
   assert.equal(hasInvalidCloudData('alice'), false);
   assert.deepEqual(getInvalidCloudSnapshot('alice')?.sites, [{ id: 'bad' }]);
+});
+
+test('a corrected recovery snapshot repairs only the version it was downloaded from', async () => {
+  const original = { ...cloud([{ id: 'bad', category_id: 'a', name: 'Bad', url: 'javascript:alert(1)' }]), categories: [{ id: 'a', name: 'A' }] };
+  quarantineCloudData('alice', original, '网址无效');
+  assert.deepEqual(describeInvalidCloudUrls(getInvalidCloudSnapshot('alice')!), ['书签「Bad」的网址']);
+  const edited = { ...getInvalidCloudSnapshot('alice')!, sites: [{ id: 'bad', category_id: 'a', name: 'Bad', url: 'https://example.com' }] };
+  const calls: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(`${init?.method || 'GET'} ${String(url)}`);
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.baseVersion, 'v1');
+      assert.deepEqual(body.sites, edited.sites);
+      assert.deepEqual(body.nodes, []);
+      return json({ success: true, isD1Bound: true, version: 'v2' });
+    }
+    return json(original);
+  };
+  const result = await repairInvalidCloudData('alice', edited);
+  assert.equal(result.localEditsPending, false);
+  assert.deepEqual(getStoredSites('alice'), edited.sites);
+  assert.equal(hasInvalidCloudData('alice'), false);
+  assert.deepEqual(getInvalidCloudSnapshot('alice')?.sites, original.sites);
+  assert.equal(calls.length, 2);
+});
+
+test('recovery refuses a changed cloud version and keeps local pending edits', async () => {
+  const original = { ...cloud([{ id: 'bad' }]), categories: [] };
+  quarantineCloudData('alice', original, '网址无效');
+  saveSites([{ id: 'local' } as any], 'alice');
+  enqueueWrite('alice', { sites: [{ id: 'local' } as any] });
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return json({ ...original, version: 'v2' }); };
+  await assert.rejects(repairInvalidCloudData('alice', { ...getInvalidCloudSnapshot('alice'), sites: [{ id: 'bad', category_id: 'a', name: 'Bad', url: 'https://example.com' }] }), /云端数据已发生变化/);
+  assert.equal(calls, 1);
+  assert.equal(hasInvalidCloudData('alice'), true);
+  assert.equal(pendingWrites('alice').length, 1);
+  assert.equal(getStoredSites('alice')[0].id, 'local');
+});
+
+test('repairing invalid cloud data keeps unsynced local bookmarks separate', async () => {
+  const original = { ...cloud([{ id: 'bad', category_id: 'a', name: 'Bad', url: 'javascript:alert(1)' }]), categories: [{ id: 'a', name: 'A' }] };
+  quarantineCloudData('alice', original, '网址无效');
+  saveSites([{ id: 'local' } as any], 'alice');
+  enqueueWrite('alice', { sites: [{ id: 'local' } as any] });
+  globalThis.fetch = async (_url, init) => init?.method === 'POST'
+    ? json({ success: true, isD1Bound: true, version: 'v2' }) : json(original);
+  const repaired = await repairInvalidCloudData('alice', {
+    ...getInvalidCloudSnapshot('alice'),
+    sites: [{ id: 'bad', category_id: 'a', name: 'Bad', url: 'https://example.com' }],
+  });
+  assert.equal(repaired.localEditsPending, true);
+  assert.equal(getStoredSites('alice')[0].id, 'local');
+  assert.equal(pendingWrites('alice').length, 1);
+  assert.equal(hasInvalidCloudData('alice'), false);
+});
+
+test('recovery rejects a file that silently drops cloud records', async () => {
+  quarantineCloudData('alice', { ...cloud([{ id: 'original' }]), categories: [], nodes: [] }, '网址无效');
+  globalThis.fetch = async () => { throw new Error('must not contact cloud'); };
+  await assert.rejects(repairInvalidCloudData('alice', { ...getInvalidCloudSnapshot('alice'), sites: [] }), /必须保留原有分类/);
+  assert.equal(hasInvalidCloudData('alice'), true);
 });

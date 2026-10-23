@@ -1,7 +1,7 @@
 import { readProfileValue, writeProfileValue } from './profileStorage';
 import type { Category, Site, TodoItem, WidgetConfig, CountdownEvent } from '../types';
 import { authenticatedFetch, clearAuthSession, getAuthSession, isCurrentSession } from './authSession';
-import { enqueueWrite, pendingWrites, rememberCloudVersion, updatePending, notifySync, archivePending, isOwnPendingKey, hasInvalidCloudData, quarantineCloudData, clearInvalidCloudData } from './syncState';
+import { enqueueWrite, pendingWrites, rememberCloudVersion, updatePending, notifySync, archivePending, isOwnPendingKey, hasInvalidCloudData, quarantineCloudData, clearInvalidCloudData, getInvalidCloudSnapshot } from './syncState';
 import type { SyncFields } from './syncState';
 import { validateCategories, validateNavigation, validateNodes } from '../../shared/navigation';
 import { normalizeCountdownIcon } from '../../shared/iconCatalog';
@@ -318,6 +318,57 @@ export async function resolveCloudConflict(username: string, keepLocal: boolean,
   saveSites(navigation.sites, username);
   saveNodes(nodes, username);
   return { ...navigation, nodes };
+}
+
+// A recovery file may repair legacy cloud records, but only against the exact snapshot it came from.
+// Keep local outbox edits untouched; the normal conflict flow handles them afterward.
+export async function repairInvalidCloudData(username: string, input: unknown): Promise<{ categories: Category[]; sites: Site[]; nodes: any[]; localEditsPending: boolean }> {
+  const session = getAuthSession();
+  if (!session || session.username !== username || !hasInvalidCloudData(username, session.apiBaseUrl)) throw new Error('请重新登录并读取待修复的云端数据');
+  const snapshot = getInvalidCloudSnapshot(username, session.apiBaseUrl);
+  if (!snapshot || !input || typeof input !== 'object' || Array.isArray(input)) throw new Error('请使用下载的云端原始数据 JSON 文件');
+  const edited = input as Record<string, unknown>;
+  if (typeof snapshot.version !== 'string' || edited.version !== snapshot.version) throw new Error('修复文件的云端版本不匹配，请重新下载原始数据');
+  for (const field of ['categories', 'sites', 'nodes'] as const) {
+    const before = snapshot[field];
+    const after = edited[field];
+    const ids = (value: unknown) => Array.isArray(value) && value.every((item) => item && typeof item === 'object' && typeof item.id === 'string')
+      ? value.map((item) => item.id as string).sort() : null;
+    const originalIds = ids(before);
+    const repairedIds = ids(after);
+    if (!originalIds || !repairedIds || JSON.stringify(originalIds) !== JSON.stringify(repairedIds)) {
+      throw new Error('修复文件必须保留原有分类、网址和监控节点的 ID；请只修正无效字段');
+    }
+  }
+  const navigation = validateNavigation(edited.categories, edited.sites, true);
+  const nodes = validateNodes(edited.nodes);
+  const key = `${session.apiBaseUrl}::${username}`;
+  const active = writeQueues.get(key);
+  if (active) await active;
+  const response = await authenticatedFetch(`/api/data?username=${encodeURIComponent(username)}`, session);
+  if (!response?.ok) throw new Error('无法核对当前云端版本，原始数据未被修改');
+  const remote = await response.json();
+  if (!isCurrentSession(session) || !remote.success || !remote.isD1Bound || remote.version !== snapshot.version) {
+    if (remote.success && remote.isD1Bound && isCurrentSession(session)) quarantineCloudData(username, remote, '云端数据已在其他设备更改，请重新下载并检查', session.apiBaseUrl);
+    throw new Error('云端数据已发生变化，请重新下载原始数据后再修复');
+  }
+  const result = await authenticatedFetch('/api/data', session, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, ...navigation, nodes, baseVersion: snapshot.version }),
+  });
+  if (!result) throw new Error('登录状态已失效，云端数据未被修改');
+  const data = await result.json();
+  if (!result.ok || !data.success || typeof data.version !== 'string') throw new Error(data.message || '修复未完成，云端原始数据仍已保留');
+  if (!isCurrentSession(session)) throw new Error('登录状态已变化，请重新检查云端数据');
+  const localEditsPending = pendingWrites(username, session.apiBaseUrl).length > 0;
+  clearInvalidCloudData(username, session.apiBaseUrl);
+  if (!localEditsPending) {
+    saveCategories(navigation.categories, username);
+    saveSites(navigation.sites, username);
+    saveNodes(nodes, username);
+    rememberCloudVersion(username, data.version, session.apiBaseUrl);
+  }
+  return { ...navigation, nodes, localEditsPending };
 }
 
 export const fetchUserD1Data = async (
