@@ -7,6 +7,7 @@ import { getStoredSites, saveCategories, saveNodes, saveSites } from '../src/uti
 import App from '../src/App';
 import { BookmarkGrid } from '../src/components/BookmarkGrid';
 import { deferred, installBrowser } from './helpers';
+import { enqueueWrite, pendingWrites } from '../src/utils/syncState';
 
 let auth: ReturnType<typeof useAuth>;
 function Probe() { auth = useAuth(); return null; }
@@ -39,6 +40,19 @@ test('legacy local flags and cached passwords cannot grant a login rejected by t
     await act(async () => { result = await auth.login('alice', 'wrong'); });
     assert.equal(result, false);
     assert.equal(auth.isAdmin, false);
+  } finally { await act(async () => view.unmount()); }
+});
+
+test('login reports a missing local API or network failure instead of claiming the password is wrong', async () => {
+  const view = await mountAuth();
+  try {
+    const errors: string[] = [];
+    globalThis.fetch = async () => new Response('<!doctype html>', { headers: { 'Content-Type': 'text/html' } });
+    await act(async () => { assert.equal(await auth.login('alice', 'unused', (message) => errors.push(message)), false); });
+    assert.match(errors.pop()!, /没有可用的登录接口/);
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+    await act(async () => { assert.equal(await auth.login('alice', 'unused', (message) => errors.push(message)), false); });
+    assert.match(errors.pop()!, /无法连接登录服务/);
   } finally { await act(async () => view.unmount()); }
 });
 
@@ -133,4 +147,16 @@ test('switching accounts and logging out immediately replaces visible bookmarks;
     assert.equal(getStoredSites('alice')[0].id, 'private-a');
     assert.equal(getStoredSites('bob')[0].id, 'private-b');
   } finally { await act(async () => view!.unmount()); }
+});
+
+test('logging in preserves an offline draft instead of replacing it with the login snapshot', async () => {
+  saveSites([{ id: 'offline-draft' } as any], 'alice');
+  enqueueWrite('alice', { categories: [], sites: [{ id: 'offline-draft' } as any] });
+  const view = await mountAuth();
+  try {
+    globalThis.fetch = async () => json(loginData());
+    await act(async () => { assert.equal(await auth.login('alice', 'password'), true); });
+    assert.equal(getStoredSites('alice')[0].id, 'offline-draft');
+    assert.equal(pendingWrites('alice').length, 1);
+  } finally { await act(async () => view.unmount()); }
 });

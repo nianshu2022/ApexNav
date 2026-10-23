@@ -2,6 +2,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { saveCategories, saveSites, saveNodes, getStoredCategories, getStoredSites, getStoredNodes, buildApiUrl } from '../utils/storage';
 import { authenticatedFetch, clearAuthSession, currentApiBase, getAuthSession, isCurrentSession, saveAuthSession, SESSION_EVENT, SESSION_KEY } from '../utils/authSession';
 import type { AuthSession } from '../utils/authSession';
+import { pendingWrites, rememberCloudVersion } from '../utils/syncState';
+import { validateNavigation, validateNodes } from '../../shared/navigation';
+import { copyProfile } from '../utils/profileStorage';
 
 async function hash(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
@@ -13,7 +16,7 @@ interface AuthContextType {
   needsSetup: boolean;
   isEnvAuth: boolean;
   currentUsername: string | null;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string, onError?: (message: string) => void) => Promise<boolean>;
   logout: () => void;
   setupAccount: (username: string, password: string) => Promise<void>;
   changeCredentials: (oldPassword: string, newUsername: string, newPassword: string) => Promise<'ok' | 'wrong_password' | 'error'>;
@@ -32,10 +35,15 @@ function acceptLogin(data: any, apiBaseUrl: string): void {
     || typeof data.token !== 'string' || !data.token || !Number.isFinite(data.expiresAt)
     || data.expiresAt <= Date.now()) throw new Error('登录响应无效，请更新后端后重试');
   // Empty arrays are valid cloud data. Do not resurrect data deleted on another device.
-  if (data.isD1Bound && !data.isNewUser) {
-    if (Array.isArray(data.categories)) saveCategories(data.categories, data.user);
-    if (Array.isArray(data.sites)) saveSites(data.sites, data.user);
-    if (Array.isArray(data.nodes)) saveNodes(data.nodes, data.user);
+  if (data.isD1Bound && !pendingWrites(data.user, apiBaseUrl).length) {
+    if (!data.isNewUser) {
+      const navigation = validateNavigation(data.categories, data.sites, true);
+      const nodes = validateNodes(data.nodes || []);
+      saveCategories(navigation.categories, data.user);
+      saveSites(navigation.sites, data.user);
+      saveNodes(nodes, data.user);
+    }
+    rememberCloudVersion(data.user, data.version, apiBaseUrl);
   }
   saveAuthSession({ username: data.user, token: data.token, expiresAt: data.expiresAt, apiBaseUrl });
 }
@@ -89,16 +97,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({ username: username.trim().toLowerCase(), passwordHash: await hash(password) }),
     });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.message || '登录失败');
+    const data = await response.json().catch(() => {
+      throw new Error('当前页面没有可用的登录接口，请配置 Cloudflare 后端地址或访问已部署站点');
+    });
+    if (!response.ok || !data.success) throw new Error(data.message || (response.status === 401 ? '用户名或密码错误' : `登录服务返回错误（HTTP ${response.status}）`));
     if (id !== operation.current || base !== currentApiBase()) throw new Error('登录操作已取消');
     acceptLogin(data, base);
     setIsEnvAuth(Boolean(data.isEnvAuth));
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string, onError?: (message: string) => void) => {
     try { await authenticate('/api/auth/login', username, password); return true; }
-    catch { return false; }
+    catch (error) {
+      onError?.(error instanceof TypeError || error instanceof DOMException && error.name === 'TimeoutError'
+        ? '无法连接登录服务，请检查网络与 Cloudflare 后端地址'
+        : error instanceof Error ? error.message : '登录失败，请重试');
+      return false;
+    }
   }, [authenticate]);
 
   const setupAccount = useCallback(async (username: string, password: string) => {
@@ -117,6 +132,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<'ok' | 'wrong_password' | 'error'> => {
     const active = getAuthSession();
     if (!active) return 'error';
+    // Finish or resolve pending edits before a server-side rename/password rotation changes their identity.
+    if (pendingWrites(active.username).length) return 'error';
     try {
       const res = await authenticatedFetch('/api/auth/change-password', active, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -133,6 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveCategories(getStoredCategories(active.username), data.user);
       saveSites(getStoredSites(active.username), data.user);
       saveNodes(getStoredNodes(active.username), data.user);
+      copyProfile(active.username, data.user);
       acceptLogin(data, active.apiBaseUrl);
       return 'ok';
     } catch { return 'error'; }

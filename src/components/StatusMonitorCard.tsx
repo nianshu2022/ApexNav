@@ -109,7 +109,7 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
   const primaryNode = nodes[0] || DEFAULT_NODES[0];
 
   return (
-    <div className="p-4 rounded-3xl bg-gradient-to-br from-indigo-500/10 via-blue-500/5 to-purple-500/10 dark:from-indigo-900/20 dark:via-blue-900/15 dark:to-purple-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden">
+    <div className="p-4 rounded-3xl bg-gradient-to-br from-indigo-500/10 via-blue-500/5 to-purple-500/10 dark:from-indigo-900/20 dark:via-blue-900/15 dark:to-purple-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel widget-glass flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden">
 
 
 

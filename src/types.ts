@@ -28,7 +28,6 @@ export type SearchEngineKey = 'google' | 'bing' | 'baidu' | 'github';
 export interface SearchEngine {
   key: SearchEngineKey;
   name: string;
-  icon: string;
   url: string;
   placeholder: string;
 }
@@ -75,7 +74,8 @@ export interface CountdownEvent {
   id: string;
   name: string;
   date: string; // ISO date string 'YYYY-MM-DD'
-  emoji?: string;
+  icon?: string;
+  emoji?: string; // Legacy backup field; normalized when loaded.
 }
 
 export interface BrowserTab {

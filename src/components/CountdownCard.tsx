@@ -7,8 +7,7 @@ import {
   DEFAULT_COUNTDOWN_EVENTS,
 } from '../utils/storage';
 import type { CountdownEvent } from '../types';
-
-const PRESET_EMOJIS = ['🎆', '🎂', '🎉', '🎊', '❤️', '🌙', '⭐', '🚀', '🏖️', '🎓', '💼', '🏠'];
+import { CountdownIcon, CountdownIconPicker } from './SvgIcon';
 
 function getDaysRemaining(dateStr: string): { days: number; past: boolean } {
   const target = new Date(dateStr);
@@ -21,7 +20,7 @@ function getDaysRemaining(dateStr: string): { days: number; past: boolean } {
 }
 
 function formatCountdown(days: number, past: boolean): string {
-  if (days === 0) return '就是今天 🎉';
+  if (days === 0) return '就是今天';
   return past ? `已过 ${days} 天` : `还有 ${days} 天`;
 }
 
@@ -38,7 +37,7 @@ export const CountdownCard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDate, setNewDate] = useState('');
-  const [newEmoji, setNewEmoji] = useState('🎆');
+  const [newIcon, setNewIcon] = useState('party');
   const [tick, setTick] = useState(0);
 
   // Refresh once per minute to keep days-remaining accurate
@@ -54,14 +53,14 @@ export const CountdownCard: React.FC = () => {
       id: `cde_${Date.now()}`,
       name: newName.trim(),
       date: newDate,
-      emoji: newEmoji,
+      icon: newIcon,
     };
     const updated = [...events, event];
     setEvents(updated);
     saveCountdownEvents(updated);
     setNewName('');
     setNewDate('');
-    setNewEmoji('🎆');
+    setNewIcon('party');
   };
 
   const handleDelete = (id: string) => {
@@ -79,7 +78,7 @@ export const CountdownCard: React.FC = () => {
   const displayEvents = events.slice(0, 3);
 
   return (
-    <div className="glass-card bg-white/80 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-4 h-[200px] max-h-[200px] flex flex-col justify-between overflow-hidden relative">
+    <div className="glass-card widget-glass bg-white/80 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-4 h-[200px] max-h-[200px] flex flex-col justify-between overflow-hidden relative">
 
 
 
@@ -119,7 +118,7 @@ export const CountdownCard: React.FC = () => {
             return (
               <div className="flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-gradient-to-br from-rose-500/10 to-orange-500/10 border border-rose-500/20">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="text-2xl leading-none select-none">{event.emoji}</span>
+                  <CountdownIcon icon={event.icon || event.emoji} className="w-6 h-6 shrink-0 text-rose-500" />
                   <div className="min-w-0">
                     <p className="text-xs font-black text-slate-900 dark:text-white truncate">{event.name}</p>
                     <p className="text-[10px] font-mono text-slate-400 mt-1">{event.date}</p>
@@ -149,7 +148,7 @@ export const CountdownCard: React.FC = () => {
               return (
                 <div key={event.id} className="flex items-center justify-between gap-2 px-1">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base leading-none select-none">{event.emoji}</span>
+                    <CountdownIcon icon={event.icon || event.emoji} className="w-4 h-4 shrink-0 text-rose-500" />
                     <div className="min-w-0">
                       <p className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-none truncate">
                         {event.name}
@@ -206,23 +205,7 @@ export const CountdownCard: React.FC = () => {
 
               {/* Add Form */}
               <form onSubmit={handleAdd} className="space-y-3 shrink-0">
-                {/* Emoji Picker Row */}
-                <div className="flex flex-wrap gap-1.5">
-                  {PRESET_EMOJIS.map((em) => (
-                    <button
-                      key={em}
-                      type="button"
-                      onClick={() => setNewEmoji(em)}
-                      className={`w-7 h-7 rounded-xl text-sm flex items-center justify-center transition-all cursor-pointer border ${
-                        newEmoji === em
-                          ? 'border-rose-400 bg-rose-50 dark:bg-rose-950/40 scale-110 shadow-sm'
-                          : 'border-slate-200/60 dark:border-slate-700/60 hover:border-rose-300 hover:scale-105'
-                      }`}
-                    >
-                      {em}
-                    </button>
-                  ))}
-                </div>
+                <CountdownIconPicker value={newIcon} onChange={setNewIcon} />
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -273,7 +256,7 @@ export const CountdownCard: React.FC = () => {
                         className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-base">{event.emoji}</span>
+                          <CountdownIcon icon={event.icon || event.emoji} className="w-4 h-4 shrink-0 text-rose-500" />
                           <div className="min-w-0">
                             <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{event.name}</p>
                             <p className="text-[10px] text-slate-400">{event.date}</p>

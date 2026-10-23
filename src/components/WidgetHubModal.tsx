@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { X, LayoutDashboard, GripVertical, ToggleLeft, ToggleRight, Sparkles, CloudSun, Quote, Calendar, Activity, Globe, Timer } from 'lucide-react';
+import { X, LayoutDashboard, GripVertical, ToggleLeft, ToggleRight, Sparkles, CloudSun, Quote, Calendar, Activity, Globe, Timer, NotebookPen, ArrowLeftRight, Puzzle, MapPin, Sun, Moon, PartyPopper, Banknote } from 'lucide-react';
 import type { WidgetConfig, WidgetId } from '../types';
 
 interface WidgetHubModalProps {
@@ -14,7 +14,7 @@ interface WidgetHubModalProps {
 interface WidgetMeta {
   name: string;
   desc: string;
-  icon: string;
+  icon: React.ReactNode;
   gradient: string;
   renderPreview: () => React.ReactNode;
 }
@@ -24,7 +24,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   weather: {
     name: '天气预报',
     desc: '定位天气与未来预报',
-    icon: '🌤️',
+    icon: <CloudSun className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-amber-500/20 to-orange-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/5 p-3 flex flex-col justify-between border border-amber-500/20 relative overflow-hidden">
@@ -45,7 +45,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   quote: {
     name: '每日一言',
     desc: '随机金句与名言警句',
-    icon: '💬',
+    icon: <Quote className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-indigo-500/20 to-purple-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-indigo-500/5 p-3 flex flex-col justify-between border border-indigo-500/20 relative overflow-hidden">
@@ -60,7 +60,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   calendar: {
     name: '月历面板',
     desc: '全月日历与节假日',
-    icon: '📅',
+    icon: <Calendar className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-blue-500/20 to-cyan-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-blue-500/10 via-cyan-500/10 to-blue-500/5 p-2.5 flex flex-col justify-between border border-blue-500/20">
@@ -86,7 +86,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   status: {
     name: '节点监控',
     desc: 'HTTP 存活与延迟检查',
-    icon: '⚡',
+    icon: <Activity className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-emerald-500/20 to-teal-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-emerald-500/5 p-3 flex flex-col justify-between border border-emerald-500/20">
@@ -99,11 +99,11 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[9px] font-mono">
             <span className="text-slate-700 dark:text-slate-300 font-bold truncate">Cloudflare DNS</span>
-            <span className="text-emerald-500 font-bold">12ms 🟢</span>
+            <span className="text-emerald-500 font-bold inline-flex items-center gap-1">12ms <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-label="在线" /></span>
           </div>
           <div className="flex items-center justify-between text-[9px] font-mono">
             <span className="text-slate-700 dark:text-slate-300 font-bold truncate">HK Main Node</span>
-            <span className="text-emerald-500 font-bold">24ms 🟢</span>
+            <span className="text-emerald-500 font-bold inline-flex items-center gap-1">24ms <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-label="在线" /></span>
           </div>
         </div>
       </div>
@@ -112,7 +112,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   worldclock: {
     name: '世界时钟',
     desc: '多时区对比与昼夜',
-    icon: '🌐',
+    icon: <Globe className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-violet-500/20 to-indigo-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-violet-500/10 via-indigo-500/10 to-violet-500/5 p-2.5 flex flex-col justify-between border border-violet-500/20">
@@ -122,12 +122,12 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
         </div>
         <div className="space-y-1 text-[9px]">
           <div className="flex justify-between items-center font-mono">
-            <span className="font-bold text-slate-700 dark:text-slate-300">🇨🇳 北京</span>
-            <span className="font-bold text-slate-900 dark:text-white">16:30 ☀️</span>
+            <span className="font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-1"><MapPin className="w-3 h-3" />北京</span>
+            <span className="font-bold text-slate-900 dark:text-white inline-flex items-center gap-1">16:30 <Sun className="w-3 h-3" aria-label="白天" /></span>
           </div>
           <div className="flex justify-between items-center font-mono">
-            <span className="font-bold text-slate-700 dark:text-slate-300">🇺🇸 纽约</span>
-            <span className="font-bold text-slate-400">04:30 🌙</span>
+            <span className="font-bold text-slate-700 dark:text-slate-300 inline-flex items-center gap-1"><MapPin className="w-3 h-3" />纽约</span>
+            <span className="font-bold text-slate-400 inline-flex items-center gap-1">04:30 <Moon className="w-3 h-3" aria-label="夜晚" /></span>
           </div>
         </div>
       </div>
@@ -136,7 +136,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   countdown: {
     name: '倒计时',
     desc: '纪念日与节日倒计时',
-    icon: '⏱️',
+    icon: <Timer className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-rose-500/20 to-orange-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-rose-500/10 via-orange-500/10 to-rose-500/5 p-3 flex flex-col justify-between border border-rose-500/20 relative overflow-hidden">
@@ -144,7 +144,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
           <span className="text-[10px] font-bold text-rose-500 flex items-center gap-1">
             <Timer className="w-3 h-3" /> 目标倒计时
           </span>
-          <span className="text-[9px] text-slate-400">🎆</span>
+          <PartyPopper className="w-3 h-3 text-rose-500" aria-hidden />
         </div>
         <div className="flex items-center justify-between">
           <div>
@@ -161,7 +161,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   todo: {
     name: '待办清单',
     desc: '今日待办与快捷备忘',
-    icon: '📝',
+    icon: <NotebookPen className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-emerald-500/20 to-teal-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-emerald-500/5 p-2.5 flex flex-col justify-between border border-emerald-500/20 relative overflow-hidden">
@@ -184,7 +184,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
   currency: {
     name: '汇率牌价',
     desc: '实时外汇与金价速览',
-    icon: '💱',
+    icon: <ArrowLeftRight className="w-5 h-5" aria-hidden="true" />,
     gradient: 'from-amber-500/20 to-yellow-500/20',
     renderPreview: () => (
       <div className="w-full h-24 rounded-2xl bg-gradient-to-br from-amber-500/10 via-yellow-500/10 to-amber-500/5 p-2.5 flex flex-col justify-between border border-amber-500/20 relative overflow-hidden">
@@ -193,7 +193,7 @@ const WIDGET_META: Record<WidgetId, WidgetMeta> = {
           <span className="text-[9px] text-slate-400">黄金 ¥568/g</span>
         </div>
         <div className="flex justify-between items-center text-[10px] font-mono">
-          <span className="text-slate-700 dark:text-slate-200 font-bold">🇺🇸 1 USD</span>
+          <span className="text-slate-700 dark:text-slate-200 font-bold inline-flex items-center gap-1"><Banknote className="w-3 h-3" />1 USD</span>
           <span className="text-amber-600 dark:text-amber-400 font-black">¥7.1820</span>
         </div>
       </div>
@@ -310,7 +310,7 @@ export const WidgetHubModal: React.FC<WidgetHubModalProps> = ({
                 const meta = WIDGET_META[widget.id] || {
                   name: widget.id,
                   desc: '',
-                  icon: '🧩',
+                  icon: <Puzzle className="w-5 h-5" aria-hidden="true" />,
                   gradient: '',
                   renderPreview: () => null,
                 };
@@ -332,7 +332,7 @@ export const WidgetHubModal: React.FC<WidgetHubModalProps> = ({
                     <div className="flex items-center justify-between mb-3 shrink-0">
                       <div className="flex items-center gap-2 min-w-0">
                         <GripVertical className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 shrink-0" />
-                        <span className="text-base select-none">{meta.icon}</span>
+                        <span className="shrink-0 text-indigo-600 dark:text-indigo-300" aria-hidden="true">{meta.icon}</span>
                         <div className="min-w-0">
                           <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate leading-none">
                             {meta.name}

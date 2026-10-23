@@ -17,7 +17,7 @@ export async function createD1() {
           try { stmt.bind(args); return stmt.step() ? stmt.getAsObject() : null; }
           finally { stmt.free(); }
         },
-        async run() { db.run(sql, args); return { success: true }; },
+        async run() { db.run(sql, args); return { success: true, meta: { changes: db.getRowsModified() } }; },
       };
     },
     async batch(statements: any[]) {
@@ -38,6 +38,8 @@ export class MemoryStorage {
   setItem(key: string, value: string) { this.values.set(key, String(value)); }
   removeItem(key: string) { this.values.delete(key); }
   clear() { this.values.clear(); }
+  get length() { return this.values.size; }
+  key(index: number) { return [...this.values.keys()][index] ?? null; }
 }
 
 export function installBrowser() {

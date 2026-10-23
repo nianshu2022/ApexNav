@@ -1,6 +1,10 @@
 import type { Category, Site } from '../types';
+import { escapeHtml, MAX_BACKUP_BYTES, safeWebUrl, validateNavigation } from '../../shared/navigation';
+import { parseBackupExtras } from './backup';
+import type { BackupExtras } from './backup';
+import { guessCategoryIcon, normalizeCategoryIcon } from '../../shared/iconCatalog';
 
-export interface ParsedBookmarkResult {
+export interface ParsedBookmarkResult extends BackupExtras {
   categories: Category[];
   sites: Site[];
   stats: {
@@ -10,44 +14,20 @@ export interface ParsedBookmarkResult {
   };
 }
 
-/**
- * Intelligent emoji heuristic based on category name
- */
-export function guessCategoryEmoji(name: string): string {
-  const n = name.trim().toLowerCase();
-  if (/ai|人工智能|gpt|claude|deepseek|大模型|llm|openai|prompt/i.test(n)) return '🤖';
-  if (/开发|编程|代码|程序|github|前端|后端|git|dev|code|tech|架构|api|linux|npm|vue|react/i.test(n)) return '💻';
-  if (/设计|ui|ux|figma|dribbble|图标|素材|插画|壁纸|配色|灵感|design|art|behance/i.test(n)) return '🎨';
-  if (/工具|效率|实用|转换|查询|生成|在线|tool|util|productivity/i.test(n)) return '🛠️';
-  if (/社区|论坛|博客|知乎|贴吧|v2ex|掘金|reddit|social|community|weibo|twitter|x\.com/i.test(n)) return '💬';
-  if (/视频|电影|影视|动漫|动画|b站|bilibili|youtube|media|tv|live|stream/i.test(n)) return '🎬';
-  if (/音乐|音频|播客|电台|网易云|music|song|audio|podcast/i.test(n)) return '🎵';
-  if (/资讯|新闻|日报|周刊|订阅|阅读|文章|rss|news|read|feed/i.test(n)) return '📰';
-  if (/学习|知识|文档|教程|课程|书籍|大学|考研|learn|study|doc|wiki/i.test(n)) return '📚';
-  if (/工作|办公|飞书|钉钉|协作|文档|表格|notion|office|work/i.test(n)) return '💼';
-  if (/购物|电商|淘宝|京东|海淘|优惠|买|shop|store|mall|amazon/i.test(n)) return '🛒';
-  if (/游戏|电竞|steam|epic|game|play/i.test(n)) return '🎮';
-  if (/金融|理财|股票|基金|银行|币|资产|finance|crypto|bank/i.test(n)) return '💰';
-  if (/生活|健康|旅游|美食|出行|地图|life|travel|food/i.test(n)) return '🍀';
-  if (/搜索|引擎|导航|门户|search|nav/i.test(n)) return '🌐';
-  if (/书签|常用|收藏|favorite|star|pin|常用推荐/i.test(n)) return '⭐';
-  return '📁';
-}
+export { guessCategoryIcon } from '../../shared/iconCatalog';
 
 /**
  * Decode HTML entities like &amp;, &lt;, &gt;, &#39;, &quot;
  */
 function decodeHtmlEntities(str: string): string {
   if (!str) return '';
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  const named: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+  return str.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi, (entity, value: string) => {
+    const key = value.toLowerCase();
+    if (named[key]) return named[key];
+    const point = key.startsWith('#x') ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+    return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : entity;
+  });
 }
 
 /**
@@ -133,16 +113,16 @@ export function parseNetscapeBookmarksHtml(htmlContent: string): ParsedBookmarkR
 
       // Extract href
       const hrefMatch = attrString.match(/\bhref=["']([^"']+)["']/i);
-      const rawUrl = hrefMatch ? hrefMatch[1].trim() : '';
+      const rawUrl = hrefMatch ? decodeHtmlEntities(hrefMatch[1].trim()) : '';
 
       // Skip invalid or browser-internal URLs
-      if (!rawUrl || /^(javascript:|place:|data:text\/html|about:|chrome:|edge:)/i.test(rawUrl)) {
+      if (!/^https?:\/\//i.test(rawUrl)) {
         continue;
       }
 
       // Extract icon
       const iconMatch = attrString.match(/\bicon=["']([^"']+)["']/i) || attrString.match(/\bicon_uri=["']([^"']+)["']/i);
-      const icon = iconMatch ? iconMatch[1].trim() : undefined;
+      const icon = iconMatch ? decodeHtmlEntities(iconMatch[1].trim()) : undefined;
 
       const title = decodeHtmlEntities(textContent.trim().replace(/<[^>]+>/g, '')) || extractDomain(rawUrl);
 
@@ -164,7 +144,7 @@ export function parseNetscapeBookmarksHtml(htmlContent: string): ParsedBookmarkR
     const simpleAnchorRegex = /<a\s+[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
     let fallbackMatch: RegExpExecArray | null;
     while ((fallbackMatch = simpleAnchorRegex.exec(htmlContent)) !== null) {
-      const href = fallbackMatch[1].trim();
+      const href = decodeHtmlEntities(fallbackMatch[1].trim());
       const text = decodeHtmlEntities(fallbackMatch[2].trim().replace(/<[^>]+>/g, ''));
       if (href && !/^(javascript:|place:|about:)/i.test(href)) {
         rawItems.push({
@@ -183,17 +163,17 @@ export function parseNetscapeBookmarksHtml(htmlContent: string): ParsedBookmarkR
   let catIndex = 0;
 
   for (const item of rawItems) {
+    try { item.url = safeWebUrl(item.url); } catch { skippedCount++; continue; }
     let chosenCatName = '';
 
-    // Smart category resolution:
+    // Preserve meaningful folder paths so unrelated leaf folders stay separate.
     // Filter out generic root folder names if deeper folders exist
     const meaningfulFolders = item.folderPath.filter(
       (f) => !isGenericRootFolder(f)
     );
 
     if (meaningfulFolders.length > 0) {
-      // Use the deepest (leaf) user folder where the link actually resides
-      chosenCatName = meaningfulFolders[meaningfulFolders.length - 1].trim();
+      chosenCatName = meaningfulFolders.map((folder) => folder.trim()).join(' / ');
     } else if (item.folderPath.length > 0) {
       // If only generic folders exist (e.g. root "书签栏"), use it nicely
       chosenCatName = item.folderPath[item.folderPath.length - 1].trim();
@@ -209,7 +189,7 @@ export function parseNetscapeBookmarksHtml(htmlContent: string): ParsedBookmarkR
       catRecord = {
         id: catId,
         name: chosenCatName,
-        icon: guessCategoryEmoji(chosenCatName),
+        icon: guessCategoryIcon(chosenCatName),
         sites: [],
       };
       categoryMap.set(chosenCatName, catRecord);
@@ -270,9 +250,10 @@ export function parseBookmarksJson(jsonContent: string): ParsedBookmarkResult {
 
   // Format 1: Standard ApexNav Export { version, categories, sites }
   if (json && Array.isArray(json.categories) && Array.isArray(json.sites)) {
+    if (json.version !== undefined && !['1.0', '2.0'].includes(String(json.version))) throw new Error('不支持的备份版本');
+    const navigation = validateNavigation(json.categories, json.sites);
     return {
-      categories: json.categories,
-      sites: json.sites,
+      ...navigation, ...parseBackupExtras(json),
       stats: {
         totalCategories: json.categories.length,
         totalSites: json.sites.length,
@@ -287,18 +268,18 @@ export function parseBookmarksJson(jsonContent: string): ParsedBookmarkResult {
     const sites: Site[] = [];
 
     json.forEach((catItem: any, idx: number) => {
-      if (catItem.name) {
+      if (catItem && typeof catItem.name === 'string' && catItem.name.trim()) {
         const catId = catItem.id || `cat-${Date.now()}-${idx}`;
         categories.push({
           id: catId,
           name: catItem.name,
-          icon: catItem.icon || guessCategoryEmoji(catItem.name),
+          icon: normalizeCategoryIcon(catItem.icon, catItem.name),
           sort_order: idx,
         });
 
         if (Array.isArray(catItem.sites)) {
           catItem.sites.forEach((siteItem: any, sIdx: number) => {
-            if (siteItem.name && siteItem.url) {
+            if (siteItem && typeof siteItem.name === 'string' && typeof siteItem.url === 'string') {
               const domain = extractDomain(siteItem.url);
               sites.push({
                 id: siteItem.id || `site-${Date.now()}-${sIdx}-${Math.random().toString(36).substring(2, 5)}`,
@@ -315,6 +296,7 @@ export function parseBookmarksJson(jsonContent: string): ParsedBookmarkResult {
       }
     });
 
+    validateNavigation(categories, sites);
     return {
       categories,
       sites,
@@ -336,35 +318,23 @@ export function parseBookmarkFileContent(
   content: string,
   fileName = ''
 ): ParsedBookmarkResult {
+  if (new TextEncoder().encode(content).byteLength > MAX_BACKUP_BYTES) throw new Error('备份文件不能超过 8 MB');
   const trimmed = content.trim();
 
   // Check if it is HTML (Netscape Bookmark or starts with <)
   const isHtml =
     fileName.toLowerCase().endsWith('.html') ||
     fileName.toLowerCase().endsWith('.htm') ||
-    trimmed.startsWith('<!DOCTYPE') ||
-    trimmed.startsWith('<html') ||
-    trimmed.startsWith('<DL>') ||
-    trimmed.startsWith('<dl>') ||
-    /NETSCAPE-Bookmark-file/i.test(trimmed);
+    trimmed.startsWith('<');
 
   if (isHtml) {
-    return parseNetscapeBookmarksHtml(trimmed);
+    const result = parseNetscapeBookmarksHtml(trimmed);
+    validateNavigation(result.categories, result.sites);
+    return result;
   }
 
-  // Otherwise try JSON
-  try {
-    return parseBookmarksJson(trimmed);
-  } catch (err: any) {
-    // If JSON parsing fails, fallback to HTML parsing in case file had no extension
-    try {
-      const htmlResult = parseNetscapeBookmarksHtml(trimmed);
-      if (htmlResult.sites.length > 0) {
-        return htmlResult;
-      }
-    } catch {}
-    throw new Error(err.message || '文件格式不支持，请上传有效的 .html 或 .json 书签文件');
-  }
+  // Invalid JSON must not bypass validation through embedded HTML strings.
+  return parseBookmarksJson(trimmed);
 }
 
 /**
@@ -376,6 +346,7 @@ export function mergeBookmarks(
   newCategories: Category[],
   newSites: Site[]
 ): { categories: Category[]; sites: Site[] } {
+  validateNavigation(newCategories, newSites);
   const mergedCategories = [...existingCategories];
   const catNameToIdMap = new Map<string, string>();
 
@@ -394,11 +365,12 @@ export function mergeBookmarks(
       incomingToTargetCatId.set(newCat.id, catNameToIdMap.get(key)!);
     } else {
       // Create new category in merged list
-      const targetId = newCat.id;
+      const targetId = mergedCategories.some((cat) => cat.id === newCat.id) ? `cat-${crypto.randomUUID()}` : newCat.id;
       catNameToIdMap.set(key, targetId);
       incomingToTargetCatId.set(newCat.id, targetId);
       mergedCategories.push({
         ...newCat,
+        id: targetId,
         sort_order: mergedCategories.length,
       });
     }
@@ -407,14 +379,14 @@ export function mergeBookmarks(
   // Merge sites (prevent exact duplicate URLs in the same category)
   const existingUrlInCatSet = new Set<string>();
   existingSites.forEach((s) => {
-    existingUrlInCatSet.add(`${s.category_id}::${s.url.trim().toLowerCase()}`);
+    existingUrlInCatSet.add(`${s.category_id}::${new URL(s.url.trim()).href}`);
   });
 
   const mergedSites = [...existingSites];
 
   for (const site of newSites) {
     const targetCatId = incomingToTargetCatId.get(site.category_id) || mergedCategories[0]?.id || 'default';
-    const siteKey = `${targetCatId}::${site.url.trim().toLowerCase()}`;
+    const siteKey = `${targetCatId}::${new URL(site.url.trim()).href}`;
 
     if (!existingUrlInCatSet.has(siteKey)) {
       existingUrlInCatSet.add(siteKey);
@@ -437,8 +409,15 @@ export function mergeBookmarks(
  * Generate standard Netscape Bookmark HTML file (compatible with Chrome, Edge, Safari, Firefox, Arc)
  */
 export function generateNetscapeBookmarksHtml(categories: Category[], sites: Site[]): string {
+  const ids = new Set(categories.map((cat) => cat.id));
+  const orphans = sites.filter((site) => !ids.has(site.category_id));
+  const recoveryId = `recovered-${crypto.randomUUID()}`;
+  if (orphans.length) {
+    categories = [...categories, { id: recoveryId, name: '未分类（恢复的网址）' }];
+    sites = sites.map((site) => ids.has(site.category_id) ? site : { ...site, category_id: recoveryId });
+  }
   const timestamp = Math.floor(Date.now() / 1000);
-  let html = `<!DOCTYPE NETSCAPE-Bookmark-group-1>
+  let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <!-- This is an automatically generated file.
      It will be read and overwritten.
      DO NOT EDIT! -->
@@ -453,11 +432,11 @@ export function generateNetscapeBookmarksHtml(categories: Category[], sites: Sit
   categories.forEach((cat) => {
     const catSites = sites.filter((s) => s.category_id === cat.id);
     if (catSites.length === 0) return;
-    html += `        <DT><H3 ADD_DATE="${timestamp}" LAST_MODIFIED="${timestamp}">${cat.name}</H3>\n`;
+    html += `        <DT><H3 ADD_DATE="${timestamp}" LAST_MODIFIED="${timestamp}">${escapeHtml(cat.name)}</H3>\n`;
     html += `        <DL><p>\n`;
     catSites.forEach((site) => {
-      const iconAttr = site.icon && site.icon.startsWith('data:image/') ? ` ICON="${site.icon}"` : '';
-      html += `            <DT><A HREF="${site.url}" ADD_DATE="${timestamp}"${iconAttr}>${site.name}</A>\n`;
+      const iconAttr = site.icon && site.icon.startsWith('data:image/') ? ` ICON="${escapeHtml(site.icon)}"` : '';
+      html += `            <DT><A HREF="${escapeHtml(safeWebUrl(site.url))}" ADD_DATE="${timestamp}"${iconAttr}>${escapeHtml(site.name)}</A>\n`;
     });
     html += `        </DL><p>\n`;
   });

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, ArrowUpRight, Globe, Bookmark, ChevronDown } from 'lucide-react';
+import { buildApiUrl } from '../utils/storage';
+import { openLink, usePreferences } from '../utils/preferences';
+import { Search, X, ArrowUpRight, Globe, Bookmark, ChevronDown, PawPrint, GitBranch } from 'lucide-react';
 import type { SearchEngine, SearchEngineKey, Site } from '../types';
 
 import { filterAndRankSites, type MatchType } from '../utils/searchMatcher';
@@ -8,32 +10,30 @@ export const SEARCH_ENGINES: Record<SearchEngineKey, SearchEngine> = {
   google: {
     key: 'google',
     name: 'Google',
-    icon: '🌐',
     url: 'https://www.google.com/search?q=',
     placeholder: '搜索网页、输入名称/拼音/网址查找已保存书签...',
   },
   bing: {
     key: 'bing',
     name: 'Bing',
-    icon: '🔍',
     url: 'https://cn.bing.com/search?q=',
     placeholder: '搜索微软 Bing，支持按名称/拼音查找书签...',
   },
   baidu: {
     key: 'baidu',
     name: '百度',
-    icon: '🐾',
     url: 'https://www.baidu.com/s?wd=',
     placeholder: '百度一下，支持按名称/拼音查找已保存书签...',
   },
   github: {
     key: 'github',
     name: 'GitHub',
-    icon: '🐙',
     url: 'https://github.com/search?q=',
     placeholder: '搜索开源仓库、代码片段、作者...',
   },
 };
+
+const ENGINE_ICONS = { google: Globe, bing: Search, baidu: PawPrint, github: GitBranch };
 
 interface SearchHeroProps {
   currentEngine: SearchEngineKey;
@@ -49,6 +49,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
   onSearchSubmit,
 }) => {
   const [query, setQuery] = useState('');
+  const preferences = usePreferences();
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [matchedSites, setMatchedSites] = useState<(Site & { matchType?: MatchType; matchLabel?: string })[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
@@ -60,9 +61,12 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const activeEngine = SEARCH_ENGINES[currentEngine] || SEARCH_ENGINES.google;
+  const ActiveEngineIcon = ENGINE_ICONS[activeEngine.key];
 
   // Match local sites & fetch web suggestions
   useEffect(() => {
+    setSuggestions([]);
+    setFocusedIndex(-1);
     if (!query.trim()) {
       setSuggestions([]);
       setMatchedSites([]);
@@ -73,24 +77,22 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
     const matches = filterAndRankSites(sites, query, 8);
     setMatchedSites(matches);
 
-    const timer = setTimeout(() => {
-      const callbackName = `baidu_sug_${Date.now()}`;
-      (window as unknown as Record<string, (data: { s?: string[] }) => void>)[callbackName] = (data) => {
-        if (data && data.s) {
-          setSuggestions(data.s.slice(0, 5));
+    if (!preferences.suggestions) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(buildApiUrl(`/api/search/suggestions?q=${encodeURIComponent(query.slice(0, 200))}`), { signal: controller.signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!controller.signal.aborted && Array.isArray(data.suggestions)) {
+          setSuggestions(data.suggestions.filter((item: unknown) => typeof item === 'string').slice(0, 5));
+          setFocusedIndex(-1);
         }
-        delete (window as unknown as Record<string, unknown>)[callbackName];
-        document.getElementById(callbackName)?.remove();
-      };
-
-      const script = document.createElement('script');
-      script.id = callbackName;
-      script.src = `https://suggestion.baidu.com/su?wd=${encodeURIComponent(query)}&cb=${callbackName}`;
-      document.body.appendChild(script);
+      } catch { /* Local bookmark search remains available when suggestions fail. */ }
     }, 150);
-
-    return () => clearTimeout(timer);
-  }, [query, sites]);
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
+  }, [query, sites, preferences.suggestions]);
 
   // Click outside listener
   useEffect(() => {
@@ -124,7 +126,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
     if (typeof window !== 'undefined' && (window as any).electronAPI && onSearchSubmit) {
       onSearchSubmit(targetUrl);
     } else {
-      window.open(targetUrl, '_blank');
+      openLink(targetUrl);
     }
     setIsFocused(false);
   };
@@ -160,7 +162,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
           window.open(site.url, openInNewTab ? '_blank' : '_self');
         }
         setIsFocused(false);
-      } else if (focusedIndex >= matchedSites.length) {
+      } else if (focusedIndex >= matchedSites.length && focusedIndex < totalSelectable) {
         const sugg = suggestions[focusedIndex - matchedSites.length];
         setQuery(sugg);
         handleSearch(sugg);
@@ -181,7 +183,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
       {/* Main Integrated Search Bar Container */}
       <div ref={containerRef} className="w-full relative z-40">
         <div
-          className={`w-full rounded-2xl sm:rounded-3xl bg-white/95 dark:bg-slate-900/95 border transition-all duration-300 shadow-xl glass-panel flex items-center p-2 sm:p-2.5 relative z-40 ${
+          className={`w-full rounded-2xl sm:rounded-3xl bg-white/95 dark:bg-slate-900/95 border transition-all duration-300 shadow-xl glass-panel liquid-surface liquid-search flex items-center p-2 sm:p-2.5 relative z-40 ${
             isFocused
               ? 'border-indigo-500/80 dark:border-indigo-400/80 ring-4 ring-indigo-500/15 shadow-indigo-500/10'
               : 'border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700'
@@ -197,7 +199,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
               className="px-3 py-2 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer group/engine"
               title="切换搜索引擎 (支持按 Tab / Shift+Tab 快速轮转)"
             >
-              <span>{activeEngine.icon}</span>
+              <ActiveEngineIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-300" aria-hidden="true" />
               <span className="hidden sm:inline">{activeEngine.name}</span>
               <span className="hidden lg:inline text-[9px] font-mono text-slate-400 dark:text-slate-500 px-1 py-0.2 rounded bg-slate-200/60 dark:bg-slate-700/60">Tab ⇥</span>
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isEngineDropdownOpen ? 'rotate-180' : ''}`} />
@@ -208,6 +210,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
               <div className="absolute left-0 top-full mt-2 w-40 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-50 p-1.5 animate-in fade-in slide-in-from-top-1">
                 {(Object.keys(SEARCH_ENGINES) as SearchEngineKey[]).map((key) => {
                   const engine = SEARCH_ENGINES[key];
+                  const EngineIcon = ENGINE_ICONS[key];
                   const isSelected = currentEngine === key;
                   return (
                     <button
@@ -224,7 +227,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span>{engine.icon}</span>
+                        <EngineIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-300" aria-hidden="true" />
                         <span>{engine.name}</span>
                       </div>
                       {isSelected && <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400" />}
@@ -296,7 +299,7 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
                       <a
                         key={site.id}
                         href={site.url}
-                        target="_blank"
+                        target={preferences.target}
                         rel="noopener noreferrer"
                         onClick={() => setIsFocused(false)}
                         onMouseEnter={() => setFocusedIndex(sIdx)}

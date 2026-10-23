@@ -1,3 +1,4 @@
+import { readProfileValue, writeProfileValue } from '../utils/profileStorage';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -62,7 +63,7 @@ interface DayForecast {
 }
 
 export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }) => {
-  const [userCity, setUserCity] = useState<string>(() => localStorage.getItem('apexnav_user_city') || '');
+  const [userCity, setUserCity] = useState<string>(() => readProfileValue('apexnav_user_city') || '');
   const [city, setCity] = useState<string>('兰州');
   const [loading, setLoading] = useState<boolean>(false);
   const [isCityModalOpen, setIsCityModalOpen] = useState(false);
@@ -263,9 +264,9 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
     const trimmed = cityToSave.trim();
     setUserCity(trimmed);
     if (trimmed) {
-      localStorage.setItem('apexnav_user_city', trimmed);
+      writeProfileValue('apexnav_user_city', trimmed);
     } else {
-      localStorage.removeItem('apexnav_user_city');
+      writeProfileValue('apexnav_user_city', '');
     }
     fetchWeather(trimmed);
     setIsCityModalOpen(false);
@@ -291,7 +292,7 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
   };
 
   return (
-    <div className="glass-card bg-white/80 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-4 flex flex-col justify-between h-[200px] max-h-[200px] overflow-hidden relative">
+    <div className="glass-card widget-glass bg-white/80 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-4 flex flex-col justify-between h-[200px] max-h-[200px] overflow-hidden relative">
 
 
       {/* Header Bar */}
@@ -506,7 +507,7 @@ export const WeatherCard: React.FC<{ isAdmin?: boolean }> = ({ isAdmin = false }
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-600'
                       }`}
                     >
-                      📍 {c}
+                      <MapPin className="w-3 h-3 inline-block mr-1" aria-hidden />{c}
                     </button>
                   ))}
                 </div>

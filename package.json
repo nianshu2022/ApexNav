@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && tsc -p tsconfig.functions.json && vite build",
-    "test": "tsx --tsconfig tsconfig.test.json --test tests/api.test.ts tests/storage.test.ts tests/auth.test.tsx",
+    "test": "tsx --tsconfig tsconfig.test.json --test tests/api.test.ts tests/storage.test.ts tests/auth.test.tsx tests/backup.test.ts tests/ui.test.tsx",
     "lint": "oxlint",
     "preview": "vite preview",
     "build:extension": "vite build"

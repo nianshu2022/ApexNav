@@ -1,3 +1,4 @@
+import { readProfileValue, writeProfileValue } from '../utils/profileStorage';
 import React, { useState } from 'react';
 
 import { CheckSquare, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
@@ -18,7 +19,7 @@ const DEFAULT_TODOS: TodoItem[] = [
 
 const getStoredTodos = (): TodoItem[] => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = readProfileValue(STORAGE_KEY);
     return saved ? JSON.parse(saved) : DEFAULT_TODOS;
   } catch {
     return DEFAULT_TODOS;
@@ -26,7 +27,7 @@ const getStoredTodos = (): TodoItem[] => {
 };
 
 const saveTodos = (items: TodoItem[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  writeProfileValue(STORAGE_KEY, JSON.stringify(items));
 };
 
 export const TodoMemoCard: React.FC = () => {
@@ -65,7 +66,7 @@ export const TodoMemoCard: React.FC = () => {
   const completedCount = todos.filter((t) => t.completed).length;
 
   return (
-    <div className="p-4 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-cyan-500/10 dark:from-emerald-900/20 dark:via-teal-900/15 dark:to-cyan-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
+    <div className="p-4 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-cyan-500/10 dark:from-emerald-900/20 dark:via-teal-900/15 dark:to-cyan-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel widget-glass flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
       {/* Header */}
       <div className="flex items-center justify-between mb-1 shrink-0">
         <div className="flex items-center space-x-1.5">
@@ -161,7 +162,7 @@ export const TodoMemoCard: React.FC = () => {
       {/* Footer Info */}
       <div className="flex items-center justify-between text-[10px] font-medium text-slate-400 pt-1 border-t border-slate-200/40 dark:border-slate-800/40 shrink-0">
         <span>已存本地</span>
-        <span className="font-mono">{completedCount === todos.length && todos.length > 0 ? '🎉 全部完成' : '点击勾选'}</span>
+        <span className="font-mono inline-flex items-center gap-1">{completedCount === todos.length && todos.length > 0 ? <><CheckCircle2 className="w-3 h-3" aria-hidden />全部完成</> : '点击勾选'}</span>
       </div>
     </div>
   );

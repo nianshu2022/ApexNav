@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Globe, ExternalLink, X, Command, Hash, ArrowRight } from 'lucide-react';
+import { Search, Globe, ExternalLink, X, Command, ArrowRight, Sun, Moon, Zap, Settings, PawPrint, GitBranch } from 'lucide-react';
+import { CategoryIcon } from './SvgIcon';
 import type { Category, Site, SearchEngineKey } from '../types';
 import { filterAndRankSites } from '../utils/searchMatcher';
 
@@ -13,7 +14,7 @@ interface CommandResult {
   label: string;
   sublabel?: string;
   icon?: string;
-  emoji?: string;
+  symbol?: React.ReactNode;
   action: () => void;
 }
 
@@ -42,28 +43,28 @@ const SEARCH_ENGINE_ACTIONS = (
     id: 'engine-google',
     type: 'action',
     label: '切换搜索引擎 → Google',
-    emoji: '🌐',
+    symbol: <Globe className="w-4 h-4" />,
     action: () => { onChangeEngine('google'); onClose(); },
   },
   {
     id: 'engine-bing',
     type: 'action',
     label: '切换搜索引擎 → Bing',
-    emoji: '🔍',
+    symbol: <Search className="w-4 h-4" />,
     action: () => { onChangeEngine('bing'); onClose(); },
   },
   {
     id: 'engine-baidu',
     type: 'action',
     label: '切换搜索引擎 → 百度',
-    emoji: '🐾',
+    symbol: <PawPrint className="w-4 h-4" />,
     action: () => { onChangeEngine('baidu'); onClose(); },
   },
   {
     id: 'engine-github',
     type: 'action',
     label: '切换搜索引擎 → GitHub',
-    emoji: '🐙',
+    symbol: <GitBranch className="w-4 h-4" />,
     action: () => { onChangeEngine('github'); onClose(); },
   },
 ];
@@ -100,7 +101,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
         type: 'action',
         label: darkMode ? '切换为浅色模式' : '切换为深色模式',
         sublabel: '外观',
-        emoji: darkMode ? '☀️' : '🌙',
+        symbol: darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />,
         action: () => { onToggleDarkMode(); onClose(); },
       },
       {
@@ -108,7 +109,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
         type: 'action',
         label: showWidgets ? '隐藏小组件' : '展开小组件',
         sublabel: '布局',
-        emoji: '⚡',
+        symbol: <Zap className="w-4 h-4" />,
         action: () => { onToggleWidgets(); onClose(); },
       },
       {
@@ -116,7 +117,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
         type: 'action',
         label: '打开设置与管理',
         sublabel: '管理',
-        emoji: '⚙️',
+        symbol: <Settings className="w-4 h-4" />,
         action: () => { onOpenSettings(); onClose(); },
       },
       ...SEARCH_ENGINE_ACTIONS(onChangeEngine, onClose),
@@ -128,7 +129,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({
       type: 'category' as ResultType,
       label: cat.name,
       sublabel: '跳转分类',
-      emoji: cat.icon || '📂',
+      symbol: <CategoryIcon icon={cat.icon} name={cat.name} className="w-4 h-4" />,
       action: () => {
         // Dispatch custom event for BookmarkGrid to handle active tab
         window.dispatchEvent(new CustomEvent('apexnav_jump_category', { detail: { id: cat.id } }));
@@ -245,12 +246,10 @@ export const CommandBar: React.FC<CommandBarProps> = ({
         />
       );
     }
-    if (result.emoji) {
-      return <span className="text-base leading-none">{result.emoji}</span>;
-    }
+    if (result.symbol) return result.symbol;
     // Fallback by type
     if (result.type === 'site') return <Globe className="w-4 h-4 text-slate-400" />;
-    if (result.type === 'category') return <Hash className="w-4 h-4 text-indigo-400" />;
+    if (result.type === 'category') return <CategoryIcon className="w-4 h-4 text-indigo-400" />;
     return <Command className="w-4 h-4 text-violet-400" />;
   };
 

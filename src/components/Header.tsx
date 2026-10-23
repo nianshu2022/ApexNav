@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sun, Moon, Settings, Compass, LayoutGrid, Image as ImageIcon, RefreshCw, Clock, Lock, Search } from 'lucide-react';
+import { Sun, Moon, Settings, Compass, LayoutGrid, Image as ImageIcon, RefreshCw, Clock, Lock, Search, Coffee, Sunrise } from 'lucide-react';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -42,10 +42,10 @@ export const Header: React.FC<HeaderProps> = ({
       const seconds = String(now.getSeconds()).padStart(2, '0');
       setTimeStr(`${hours}:${minutes}:${seconds}`);
 
-      if (hours >= 5 && hours < 11) setGreeting('早上好 🌅');
-      else if (hours >= 11 && hours < 13) setGreeting('中午好 ☀️');
-      else if (hours >= 13 && hours < 18) setGreeting('下午好 ☕');
-      else setGreeting('晚上好 🌙');
+      if (hours >= 5 && hours < 11) setGreeting('早上好');
+      else if (hours >= 11 && hours < 13) setGreeting('中午好');
+      else if (hours >= 13 && hours < 18) setGreeting('下午好');
+      else setGreeting('晚上好');
     };
 
     updateTime();
@@ -54,9 +54,9 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="w-full max-w-7xl mx-auto px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between transition-colors relative z-50">
+    <header className="w-full max-w-7xl mx-auto px-4 py-3 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-y-3 transition-colors relative z-50">
       {/* Brand Logo & High-Contrast Greeting Status Bar */}
-      <div className="flex items-center space-x-3">
+      <div className="flex w-full sm:w-auto items-center space-x-3">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/20">
           <div className="w-full h-full bg-white dark:bg-slate-900 rounded-[14px] flex items-center justify-center">
             <Compass className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -71,15 +71,17 @@ export const Header: React.FC<HeaderProps> = ({
           <p className={`text-xs font-semibold ${
             bingBg ? 'text-white/90 drop-shadow-sm' : 'text-slate-500 dark:text-slate-400'
           }`}>
-            {greeting}
+            <span className="inline-flex items-center gap-1">{greeting}
+              {greeting === '早上好' ? <Sunrise className="w-3 h-3" aria-hidden /> : greeting === '中午好' ? <Sun className="w-3 h-3" aria-hidden /> : greeting === '下午好' ? <Coffee className="w-3 h-3" aria-hidden /> : <Moon className="w-3 h-3" aria-hidden />}
+            </span>
           </p>
         </div>
       </div>
 
       {/* Clock & Action Controls */}
-      <div className="flex items-center space-x-2 sm:space-x-3">
+      <div className="header-actions flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 sm:gap-3">
         {/* Prominent Apple-style Digital Clock Glass Badge (Enlarged to 16px-18px) */}
-        <div className="hidden md:flex items-center space-x-2 px-3.5 py-1.5 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-md shadow-2xs font-mono font-black text-base sm:text-lg text-slate-900 dark:text-white">
+        <div className="hidden md:flex items-center space-x-2 px-3.5 py-1.5 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-md liquid-surface font-mono font-black text-base sm:text-lg text-slate-900 dark:text-white">
           <Clock className="w-4 h-4 text-indigo-500" />
           <span>{timeStr}</span>
         </div>

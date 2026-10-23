@@ -1,3 +1,4 @@
+import { readProfileValue, writeProfileValue } from '../utils/profileStorage';
 import React, { useState, useEffect } from 'react';
 import { Quote as QuoteIcon, RefreshCw, Copy, Check, Heart } from 'lucide-react';
 
@@ -24,7 +25,7 @@ export const QuoteCard: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [category, setCategory] = useState('d');
   const [favorites, setFavorites] = useState<FavoriteQuote[]>(() => {
-    const saved = localStorage.getItem('apexnav_favorite_quotes');
+    const saved = readProfileValue('apexnav_favorite_quotes');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -125,11 +126,11 @@ export const QuoteCard: React.FC = () => {
       updated = [...favorites, { text: quote.hitokoto, enText: quote.enText, from: quote.from }];
     }
     setFavorites(updated);
-    localStorage.setItem('apexnav_favorite_quotes', JSON.stringify(updated));
+    writeProfileValue('apexnav_favorite_quotes', JSON.stringify(updated));
   };
 
   return (
-    <div className="p-4 rounded-3xl bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-rose-500/10 dark:from-purple-900/20 dark:via-pink-900/15 dark:to-rose-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
+    <div className="p-4 rounded-3xl bg-gradient-to-br from-purple-500/10 via-pink-500/5 to-rose-500/10 dark:from-purple-900/20 dark:via-pink-900/15 dark:to-rose-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel widget-glass flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
 
       {/* Header Bar: Icon, Title & Category Pills (Locked shrink-0) */}
       <div className="flex items-center justify-between mb-1 shrink-0">

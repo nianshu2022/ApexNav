@@ -8,7 +8,7 @@
 
 ApexNav 是一款基于 **React 19 + TypeScript + Tailwind CSS v4 + Cloudflare Pages & D1** 打造的苹果 Vision Pro 毛玻璃质感极简个人/公共网址导航系统。
 
-**本项目的核心设计原则**：不仅仅是一个 Vibe Coding 成果，更是**架构严密、安全规范、零成本运维、可长期维护的开源项目**。
+项目提供书签管理、搜索和个人组件，并使用 Cloudflare Pages 与 D1 部署。当前同步范围、升级要求和安全边界见下方文档。
 
 🌐 **官方线上演示站点**：[https://nav.nianshu2022.cn](https://nav.nianshu2022.cn)
 
@@ -16,7 +16,7 @@ ApexNav 是一款基于 **React 19 + TypeScript + Tailwind CSS v4 + Cloudflare P
 
 ## 📚 详细文档导航 (Documentation Index)
 
-- 🔒 [**SECURITY.md**](SECURITY.md)：零信任安全架构、Cloudflare Secrets 托管、访问控制矩阵与安全部署规范。
+- 🔒 [**SECURITY.md**](SECURITY.md)：认证、凭据托管、数据访问与现有安全边界。
 - 🏗️ [**ARCHITECTURE.md**](ARCHITECTURE.md)：系统架构视图、Cloudflare D1 数据双向同步链路、离线降级策略与模块职责划分。
 - 🤝 [**CONTRIBUTING.md**](CONTRIBUTING.md)：开源社区贡献指南、开发环境配置与 PR 提交规范。
 
@@ -47,10 +47,10 @@ sequenceDiagram
 
     Admin->>UI: 1. 新增/修改/删除网址或分类
     UI->>Store: 2. 写入本地 LocalStorage (秒级响应)
-    UI->>Edge: 3. 发起 POST /api/data (携带 Bearer 会话凭证与 JSON)
-    Edge->>D1: 4. 验证会话并执行 UPSERT 写入 DB
+    UI->>Edge: 3. 发起 POST /api/data (携带 Bearer、baseVersion 与 JSON)
+    Edge->>D1: 4. 验证会话、字段和版本，执行条件 UPSERT
     D1-->>Edge: 5. 写入成功确认
-    Edge-->>UI: 6. 返回 { success: true }
+    Edge-->>UI: 6. 返回 { success: true, version }
 
     Note over Admin, D1: 切登录账号 / 手动拉取数据
     Admin->>UI: 7. 登录账号 / 手动拉取
@@ -68,11 +68,11 @@ sequenceDiagram
 ## ✨ 核心特性与技术亮点
 
 - 🍎 **Vision Pro 苹果美学**：精致毛玻璃（Glassmorphism）、微交互动画、动态背景气泡与 Unsplash 5K/4K 随心高清壁纸。
-- 🔍 **4 合 1 智能搜索**：内置 Google、Bing、Baidu、GitHub 引擎，支持键盘 `Tab` 快速切引擎、输入自动下拉联想词，支持回车跳转或直接检索本地书签。
+- 🔍 **4 合 1 智能搜索**：内置 Google、Bing、Baidu、GitHub 引擎，支持键盘 `Tab` 快速切引擎、回车跳转和本地书签搜索。网络联想默认关闭，启用后通过后端向百度请求建议。
 - 👥 **多账号隔离 & 访客演示模式**：
   - **访客模式**：未登录时永远展示通用的演示网址与节点，只读防误触，任何修改不会污染公开视图。
   - **多账号独立存储**：数据严格按照 `username` 进行用户隔离与权限校验。
-- 🌐 **Cloudflare D1 跨设备云同步**：支持手机、电脑、公司机器跨设备同步书签与节点，任何终端修改自动云端同步。
+- 🌐 **Cloudflare D1 跨设备云同步**：分类、书签和节点修改自动上传，离线修改保留待上传记录；旧版本冲突需在设置中选择本地或云端数据。其他设备通过登录或手动拉取获取更新。
 - 🛡️ **Cloudflare Secrets 边缘密钥托管**：管理员账号密码可直接部署在 Cloudflare 云端环境变量秘钥中，前端零密码露出的零信任架构（详见 [SECURITY.md](SECURITY.md)）。
 - 🍱 **Bento 小组件矩阵**：
   - 🌤️ **实时天气卡片**：自动定位 / 搜索切换城市、未来 3 天预报、24 小时气温趋势与空气指标。
@@ -80,7 +80,9 @@ sequenceDiagram
   - 📅 **极简月历组件**：高清月视图与当前日期高亮。
   - ⚡ **节点运行监控**：支持节点 Ping 延迟测试与在线率统计。
 - 🤖 **✨ AI 智能网址解析**：添加书签时支持一键抓取与智能提取网页标题、自动匹配 64px Favicon 与描述文本。
-- 📦 **本地优先 & 一键备份**：优先存储于浏览器 `localStorage`，支持一键导出为 JSON 备份文件及随时导入还原。
+- 📦 **本地保存与备份**：JSON 2.0 包含导航、节点、个人组件、偏好与冲突恢复记录；兼容旧版 JSON 和浏览器 HTML。个人组件按账号保存在本机，尚不自动云同步。替换导入前下载当前备份，导入文件限制 8 MiB。
+
+升级此版本时需同时发布前后端，刷新旧客户端；无需新增数据库字段。详见 [同步与备份说明](ARCHITECTURE.md)。
 
 ---
 
@@ -121,6 +123,7 @@ npm install
 npm run dev
 ```
 打开浏览器访问 `http://localhost:5173` 即可预览。
+Vite 本地开发服务只提供前端，不包含 Cloudflare Pages Functions 登录接口。若需在本地使用已部署账号，请在「设置与管理 → 云端与数据」中填写已部署站点的 HTTPS 地址作为后端地址，再登录；直接访问已部署站点也可以登录。
 
 ### 3. 构建生产包
 

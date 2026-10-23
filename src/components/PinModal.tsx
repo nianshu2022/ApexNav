@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, X, LogIn, ShieldPlus, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, X, LogIn, ShieldPlus, UserPlus, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PinModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  onConfigureBackend?: () => void;
 }
 
-export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess, onConfigureBackend }) => {
   const { login, needsSetup, setupAccount, isEnvAuth } = useAuth();
   const [isSetupMode, setIsSetupMode] = useState(needsSetup && !isEnvAuth);
   const [username, setUsername] = useState('');
@@ -65,14 +66,13 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
 
     setLoading(true);
     setError('');
-    const success = await login(username, password);
+    const success = await login(username, password, setError);
     setLoading(false);
 
     if (success) {
       onSuccess();
       onClose();
     } else {
-      setError('用户名或密码错误，请重试');
       setPassword('');
     }
   };
@@ -170,9 +170,15 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
           {/* Error */}
           {error && (
             <p className="text-xs text-rose-500 dark:text-rose-400 flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
-              <span className="text-base leading-none">⚠</span>
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden />
               {error}
             </p>
+          )}
+          {error.includes('登录接口') && onConfigureBackend && (
+            <button type="button" onClick={onConfigureBackend}
+              className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+              配置 Cloudflare 后端地址
+            </button>
           )}
 
           {/* Submit */}

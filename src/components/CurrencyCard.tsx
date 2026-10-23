@@ -1,19 +1,18 @@
 import React, { useState } from 'react';
-import { DollarSign, RefreshCw, TrendingUp } from 'lucide-react';
+import { DollarSign, RefreshCw, TrendingUp, Banknote } from 'lucide-react';
 
 interface RateItem {
   code: string;
   name: string;
-  flag: string;
   rate: string;
   change: string;
   up: boolean;
 }
 
 const DEFAULT_RATES: RateItem[] = [
-  { code: 'USD', name: '美元', flag: '🇺🇸', rate: '7.1820', change: '+0.12%', up: true },
-  { code: 'EUR', name: '欧元', flag: '🇪🇺', rate: '7.7850', change: '-0.08%', up: false },
-  { code: 'HKD', name: '港币', flag: '🇭🇰', rate: '0.9190', change: '+0.04%', up: true },
+  { code: 'USD', name: '美元', rate: '7.1820', change: '+0.12%', up: true },
+  { code: 'EUR', name: '欧元', rate: '7.7850', change: '-0.08%', up: false },
+  { code: 'HKD', name: '港币', rate: '0.9190', change: '+0.04%', up: true },
 ];
 
 export const CurrencyCard: React.FC = () => {
@@ -26,7 +25,7 @@ export const CurrencyCard: React.FC = () => {
   };
 
   return (
-    <div className="p-4 rounded-3xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-yellow-500/10 dark:from-amber-900/20 dark:via-orange-900/15 dark:to-yellow-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
+    <div className="p-4 rounded-3xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-yellow-500/10 dark:from-amber-900/20 dark:via-orange-900/15 dark:to-yellow-900/20 border border-slate-200/70 dark:border-slate-800/70 shadow-xs glass-panel widget-glass flex flex-col justify-between hover:scale-[1.005] transition-transform duration-300 h-[200px] max-h-[200px] overflow-hidden relative">
       {/* Glow accent */}
       <div className="absolute -top-6 -left-6 w-24 h-24 rounded-full bg-amber-400/10 blur-2xl pointer-events-none" />
 
@@ -59,7 +58,7 @@ export const CurrencyCard: React.FC = () => {
             className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-white/50 dark:bg-slate-800/40"
           >
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-base leading-none select-none">{item.flag}</span>
+              <Banknote className="w-4 h-4 shrink-0 text-emerald-500" aria-hidden />
               <div className="min-w-0">
                 <span className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mr-1">
                   1 {item.code}

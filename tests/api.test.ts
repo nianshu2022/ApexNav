@@ -6,6 +6,10 @@ import { createD1 } from './helpers';
 
 const origin = 'https://apexnav.test';
 async function call(env: any, path: string, body?: any, token?: string) {
+  if (path === '/api/data' && body !== undefined && token && !Object.hasOwn(body, 'baseVersion')) {
+    const snapshot = await call(env, '/api/data', undefined, token);
+    body = { ...body, baseVersion: snapshot.data.version };
+  }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await onRequest({ env, request: new Request(origin + path, {
@@ -59,7 +63,7 @@ test('tampered, expired and different-deployment sessions are rejected', async (
 
 test('bookmark writes preserve nodes; node writes preserve bookmarks; explicit [] clears nodes', async () => {
   const { env, token } = await registered();
-  const nodes = [{ id: 'n1', url: 'https://node.test' }];
+  const nodes = [{ id: 'n1', name: 'Node', url: 'https://node.test', status: 'checking' }];
   const categories = [{ id: 'c1', name: 'work' }];
   const sites = [{ id: 's1', category_id: 'c1', name: 'Docs', url: 'https://docs.test' }];
   assert.equal((await call(env, '/api/data', { nodes }, token)).status, 200);
@@ -93,7 +97,7 @@ test('an authenticated account without D1 cannot report a successful cloud save'
 
 test('rename/password change preserves data and invalidates the old session', async () => {
   const { env, token, passwordHash } = await registered();
-  const nodes = [{ id: 'keep-me' }];
+  const nodes = [{ id: 'keep-me', name: 'Keep', url: 'https://node.test', status: 'checking' }];
   await call(env, '/api/data', { nodes }, token);
   const newPasswordHash = await hashPassword('new-test-password');
   const wrong = await call(env, '/api/auth/change-password', {
@@ -112,13 +116,13 @@ test('rename/password change preserves data and invalidates the old session', as
 
 test('same-name password change and duplicate registration do not erase navigation data', async () => {
   const { env, token, passwordHash } = await registered();
-  await call(env, '/api/data', { nodes: [{ id: 'keep' }] }, token);
+  await call(env, '/api/data', { nodes: [{ id: 'keep', name: 'Keep', url: 'https://node.test', status: 'checking' }] }, token);
   assert.equal((await call(env, '/api/auth/register', { username: 'alice', passwordHash })).status, 409);
   const changed = await call(env, '/api/auth/change-password', {
     oldPasswordHash: passwordHash, newUsername: 'alice', newPasswordHash: await hashPassword('changed'),
   }, token);
   assert.equal(changed.status, 200);
-  assert.deepEqual(changed.data.nodes, [{ id: 'keep' }]);
+  assert.deepEqual(changed.data.nodes, [{ id: 'keep', name: 'Keep', url: 'https://node.test', status: 'checking' }]);
   assert.equal((await call(env, '/api/data', undefined, token)).status, 401);
 });
 
@@ -126,4 +130,40 @@ test('unknown routes and unsupported methods cannot fall through to the data han
   const { env, token } = await registered();
   assert.equal((await call(env, '/api/unknown', { sites: [] }, token)).status, 404);
   assert.equal((await call(env, '/api/auth/login', undefined, token)).status, 405);
+});
+
+test('a stale device cannot overwrite newer cloud data; identical lost-response retries are accepted', async () => {
+  const { env, token } = await registered();
+  const baseVersion = (await call(env, '/api/data', undefined, token)).data.version;
+  const node = (id: string) => ({ id, name: id, url: 'https://node.test', status: 'checking' });
+  const first = await call(env, '/api/data', { nodes: [node('first')], baseVersion }, token);
+  assert.equal(first.status, 200);
+  assert.equal((await call(env, '/api/data', { nodes: [node('second')], baseVersion }, token)).status, 409);
+  const retry = await call(env, '/api/data', { nodes: [node('first')], baseVersion }, token);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.version, first.data.version);
+  assert.equal((await call(env, '/api/data', undefined, token)).data.nodes[0].id, 'first');
+});
+
+test('simultaneous writers use an atomic snapshot comparison', async () => {
+  const { env, token } = await registered();
+  const baseVersion = (await call(env, '/api/data', undefined, token)).data.version;
+  const results = await Promise.all(['one', 'two'].map((name) => call(env, '/api/data', {
+    categories: [{ id: 'c', name }], sites: [], baseVersion,
+  }, token)));
+  assert.deepEqual(results.map((result) => result.status).sort(), [200, 409]);
+  const winner = results.findIndex((result) => result.status === 200);
+  assert.equal((await call(env, '/api/data', undefined, token)).data.categories[0].name, ['one', 'two'][winner]);
+});
+
+test('invalid records, unsafe URLs, orphan sites and obsolete write protocols are rejected without mutation', async () => {
+  const { env, token } = await registered();
+  for (const payload of [
+    { categories: [null] }, { nodes: [{ id: 'bad' }] },
+    { categories: [{ id: 'c', name: 'One' }, { id: 'c', name: 'Two' }] },
+    { sites: [{ id: 's', name: 'Orphan', category_id: 'missing', url: 'https://example.test' }] },
+    { categories: [{ id: 'c', name: 'One' }], sites: [{ id: 's', name: 'Unsafe', category_id: 'c', url: 'javascript:alert(1)' }] },
+  ]) assert.equal((await call(env, '/api/data', payload, token)).status, 400);
+  assert.equal((await call(env, '/api/data', { nodes: [], baseVersion: undefined }, token)).status, 428);
+  assert.deepEqual((await call(env, '/api/data', undefined, token)).data.categories, []);
 });

@@ -8,8 +8,15 @@ import {
 } from 'lucide-react';
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { syncUserWithD1, fetchUserD1Data, getApiBaseUrl, saveApiBaseUrl } from '../utils/storage';
+import { syncUserWithD1, fetchUserD1Data, getApiBaseUrl, saveApiBaseUrl, resolveCloudConflict, getStoredNodes } from '../utils/storage';
+import { downloadWorkspaceBackup } from '../utils/backup';
+import type { BackupExtras } from '../utils/backup';
+import { pendingWrites } from '../utils/syncState';
+import { hasLegacyProfile, importLegacyProfile } from '../utils/profileStorage';
+import { MAX_BACKUP_BYTES } from '../../shared/navigation';
+import { PREFERENCE_EVENT, usePreferences } from '../utils/preferences';
 import { matchSite } from '../utils/searchMatcher';
+import { CategoryIcon, CategoryIconPicker } from './SvgIcon';
 import {
   parseBookmarkFileContent,
   mergeBookmarks,
@@ -22,10 +29,11 @@ import { fetchSiteMetadata } from '../utils/siteParser';
 
 interface SettingsModalProps {
   isOpen: boolean;
+  initialTab?: 'sites' | 'cloud';
   onClose: () => void;
   categories: Category[];
   sites: Site[];
-  onImportData: (categories: Category[], sites: Site[], syncCloud?: boolean) => void;
+  onImportData: (categories: Category[], sites: Site[], syncCloud?: boolean, extras?: BackupExtras) => void;
   onResetDefault: () => void;
   onAddSite: (site: Omit<Site, 'id'>) => void;
   onEditSite: (site: Site) => void;
@@ -48,8 +56,6 @@ interface ConfirmModalState {
   isDanger?: boolean;
   onConfirm: () => void;
 }
-
-const PRESET_EMOJIS = ['📁', '🤖', '💻', '💬', '🛠️', '📚', '📢', '🚀', '⚡', '🎨', '📌', '⭐', '🔥', '🎮', '🎵', '🌐'];
 
 // Custom Apple-style Glassmorphism Select Dropdown Component
 const CustomSelect: React.FC<{
@@ -124,6 +130,7 @@ const CustomSelect: React.FC<{
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
+  initialTab = 'sites',
   onClose,
   categories,
   sites,
@@ -138,14 +145,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const preferences = usePreferences();
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('sites');
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab('sites');
+      setActiveTab(initialTab);
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab]);
 
   // Search & Filter state for site management
   const [selectedCatId, setSelectedCatId] = useState<string>('all');
@@ -169,7 +177,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [catName, setCatName] = useState('');
-  const [catIcon, setCatIcon] = useState('📁');
+  const [catIcon, setCatIcon] = useState('folder');
 
   // Account Change Credentials state
   const [oldPassword, setOldPassword] = useState('');
@@ -305,11 +313,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (cat) {
       setEditingCategory(cat);
       setCatName(cat.name);
-      setCatIcon(cat.icon || '📁');
+      setCatIcon(cat.icon || 'folder');
     } else {
       setEditingCategory(null);
       setCatName('');
-      setCatIcon('📁');
+      setCatIcon('folder');
     }
     setIsAddingCategory(true);
   };
@@ -324,14 +332,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onEditCategory({
           ...editingCategory,
           name: catName.trim(),
-          icon: catIcon.trim() || '📁',
+          icon: catIcon,
         });
         showMsg(`分类「${catName.trim()}」修改成功！`, 'success');
       }
     } else {
       onAddCategory({
         name: catName.trim(),
-        icon: catIcon.trim() || '📁',
+        icon: catIcon,
       });
       showMsg(`新增分类「${catName.trim()}」成功！`, 'success');
     }
@@ -340,20 +348,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Export JSON
   const handleExportJSON = () => {
-    const data = {
-      version: '1.0',
-      exported_at: new Date().toISOString(),
-      categories,
-      sites,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ApexNav-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showMsg('数据已成功导出 JSON 备份文件！', 'success');
+    if (!currentUsername) return;
+    try {
+      downloadWorkspaceBackup(currentUsername, categories, sites);
+      showMsg('已发起 JSON 备份下载，请确认文件已保存。', 'success');
+    } catch (error) { showMsg(error instanceof Error ? error.message : '备份导出失败', 'error'); }
   };
 
   // Export standard browser HTML bookmarks (Netscape Bookmark format)
@@ -377,6 +376,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_BACKUP_BYTES) { showMsg('备份文件不能超过 8 MB', 'error'); e.target.value = ''; return; }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -384,7 +384,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const text = event.target?.result as string;
         const parsed = parseBookmarkFileContent(text, file.name);
 
-        if (parsed.stats.totalSites === 0) {
+        if (parsed.stats.totalSites === 0 && !file.name.toLowerCase().endsWith('.json')) {
           showMsg('未在该文件中解析到任何有效书签，请检查文件格式。', 'error');
           return;
         }
@@ -416,18 +416,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Confirm import action from preview dialog
   const handleConfirmImport = () => {
     if (!importPreview.result) return;
+    try {
     const { categories: newCats, sites: newSites, stats } = importPreview.result;
 
     if (importPreview.mode === 'append') {
       const merged = mergeBookmarks(categories, sites, newCats, newSites);
       onImportData(merged.categories, merged.sites);
-      showMsg(`✅ 成功合并导入 ${stats.totalSites} 个书签！现有 ${merged.categories.length} 个分类，${merged.sites.length} 个网址。`, 'success');
+      showMsg(`成功合并导入 ${stats.totalSites} 个书签！现有 ${merged.categories.length} 个分类，${merged.sites.length} 个网址。`, 'success');
     } else {
-      onImportData(newCats, newSites);
-      showMsg(`✅ 全新导入成功！已加载 ${stats.totalCategories} 个分类，${stats.totalSites} 个网址。`, 'success');
+      if (currentUsername) downloadWorkspaceBackup(currentUsername, categories, sites);
+      onImportData(newCats, newSites, true, importPreview.result);
+      showMsg(`全新导入成功！已加载 ${stats.totalCategories} 个分类，${stats.totalSites} 个网址。`, 'success');
     }
 
     setImportPreview((prev) => ({ ...prev, isOpen: false }));
+    } catch (error) { showMsg(error instanceof Error ? error.message : '导入失败，原数据已保留', 'error'); }
+  };
+
+  const handleResolveConflict = (keepLocal: boolean) => {
+    if (!currentUsername) return;
+    askConfirm(keepLocal ? '使用本地数据覆盖云端' : '保留云端数据',
+      '将先下载当前完整备份，并归档待同步记录。确认后以所选数据为准；请保留下载的备份。', async () => {
+        try {
+          downloadWorkspaceBackup(currentUsername, categories, sites);
+          const result = await resolveCloudConflict(currentUsername, keepLocal, { categories, sites, nodes: getStoredNodes(currentUsername) });
+          if (result) onImportData(result.categories, result.sites, false);
+          showMsg('同步冲突已处理，个人小组件保持不变', 'success');
+        } catch (error) { showMsg(error instanceof Error ? error.message : '处理失败', 'error'); }
+      }, true, '确认处理');
   };
 
   // Change credentials
@@ -696,7 +712,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   icon: meta.icon,
                                   description: prev.description.trim() || meta.description,
                                 }));
-                                showMsg('✨ AI 智能抓取网站信息成功！', 'success');
+                                showMsg('AI 智能抓取网站信息成功！', 'success');
                               } catch (err: any) {
                                 showMsg(err.message || '抓取失败，请检查网址格式', 'error');
                               } finally {
@@ -864,7 +880,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    分类可用来归类与收纳你的各类网页书签，点击编辑按钮可随时修改名称或 Emoji 图标。
+                    分类可用来归类与收纳你的各类网页书签，点击编辑按钮可随时修改名称或 SVG 图标。
                   </p>
                   <button
                     onClick={() => handleOpenCategoryForm()}
@@ -906,28 +922,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">Emoji 图标</label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={catIcon}
-                              onChange={(e) => setCatIcon(e.target.value)}
-                              placeholder="📁"
-                              className="w-16 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-center outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                            <div className="flex items-center gap-1 overflow-x-auto py-1">
-                              {PRESET_EMOJIS.slice(0, 10).map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  onClick={() => setCatIcon(emoji)}
-                                  className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-100 text-xs flex items-center justify-center cursor-pointer shrink-0"
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">分类图标</label>
+                          <CategoryIconPicker value={catIcon} onChange={setCatIcon} />
                         </div>
                       </div>
 
@@ -960,8 +956,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between hover:bg-white dark:hover:bg-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-all group"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-2xl p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 shadow-2xs">
-                            {cat.icon}
+                          <span className="inline-flex items-center justify-center p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 shadow-2xs text-indigo-600 dark:text-indigo-300">
+                            <CategoryIcon icon={cat.icon} name={cat.name} className="w-5 h-5" />
                           </span>
                           <div className="min-w-0">
                             <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
@@ -1037,7 +1033,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       onClick={() => {
                         saveApiBaseUrl(apiBaseUrlInput);
-                        showMsg('✅ 已保存远程 Cloudflare API 服务器域名！', 'success');
+                        showMsg('已保存远程 Cloudflare API 服务器域名！', 'success');
                       }}
                       className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all cursor-pointer shrink-0"
                     >
@@ -1064,9 +1060,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           showMsg('正在向 Cloudflare D1 数据库上传数据...', 'success');
                           const ok = await syncUserWithD1(currentUsername, categories, sites);
                           if (ok) {
-                            showMsg('✅ 已成功将当前所有分类和网址写入 Cloudflare 云端数据库！', 'success');
+                            showMsg('已成功将当前所有分类和网址写入 Cloudflare 云端数据库！', 'success');
                           } else {
-                            showMsg('❌ 上传失败，请检查 Cloudflare 数据库绑定状态。', 'error');
+                            showMsg('上传未完成，本地修改已保留。请检查网络或处理同步冲突。', 'error');
                           }
                         }}
                         className="px-4 py-2 rounded-2xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1081,9 +1077,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           const cloudData = await fetchUserD1Data(currentUsername);
                           if (cloudData && Array.isArray(cloudData.categories)) {
                             onImportData(cloudData.categories, cloudData.sites || [], false);
-                            showMsg(`✅ 拉取成功！加载了云端 ${cloudData.categories.length} 个分类，${(cloudData.sites || []).length} 个网址。`, 'success');
+                            showMsg(`拉取成功！加载了云端 ${cloudData.categories.length} 个分类，${(cloudData.sites || []).length} 个网址。`, 'success');
                           } else {
-                            showMsg('ℹ️ 未检测到云端有更新数据或数据库尚无记录。', 'error');
+                            showMsg('未能拉取。若有待同步修改，请先完成上传或选择如何处理冲突。', 'error');
                           }
                         }}
                         className="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1095,6 +1091,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
+                {currentUsername && pendingWrites(currentUsername).length > 0 && (
+                  <div className="p-4 rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 space-y-3 text-sm">
+                    <p>本地还有待同步修改。普通拉取不会覆盖这些内容；需要选择版本时，请先保留备份。</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button type="button" className="underline cursor-pointer" onClick={handleExportJSON}>导出当前完整备份</button>
+                      <button type="button" className="underline cursor-pointer" onClick={() => handleResolveConflict(true)}>以本地为准</button>
+                      <button type="button" className="underline cursor-pointer" onClick={() => handleResolveConflict(false)}>以云端为准</button>
+                    </div>
+                  </div>
+                )}
+                {currentUsername && hasLegacyProfile() && (
+                  <div className="p-4 rounded-2xl border border-slate-300 dark:border-slate-700 space-y-2 text-sm">
+                    <p>检测到旧版未区分账号的小组件数据。可将它导入当前账号；其他账号和访客不会自动读取。</p>
+                    <button type="button" className="underline cursor-pointer" onClick={() => askConfirm('导入旧版小组件', '确认这些待办、倒计时和收藏属于当前账号？导入前将备份当前数据。', () => {
+                      try { handleExportJSON(); importLegacyProfile(); showMsg('旧版小组件已导入当前账号', 'success'); }
+                      catch (error) { showMsg(error instanceof Error ? error.message : '导入失败', 'error'); }
+                    })}>导入到当前账号</button>
+                  </div>
+                )}
                 {/* Bookmark Migration, Backup & Restore Card */}
                 <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
                   <div className="flex items-center justify-between">
@@ -1128,10 +1143,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       onClick={handleExportJSON}
                       className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                      title="导出包含所有配置的 ApexNav 结构化数据"
+                        title="导出分类、网址、节点、个人小组件和界面偏好，不包含登录凭据"
                     >
                       <Download className="w-3.5 h-3.5 text-slate-400" />
-                      导出 JSON 备份
+                      导出完整 JSON 备份
                     </button>
                     <input
                       ref={fileInputRef}
@@ -1143,6 +1158,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 text-sm">
+                  <input type="checkbox" checked={preferences.suggestions} onChange={(event) => {
+                    localStorage.setItem('apexnav_web_suggestions', String(event.target.checked));
+                    window.dispatchEvent(new Event(PREFERENCE_EVENT));
+                  }} />
+                  <span>启用网络搜索联想<span className="block mt-1 text-xs text-slate-500">开启后，输入内容经当前后端发送给百度获取联想词，与所选搜索引擎无关。关闭时仍可搜索本地书签。</span></span>
+                </label>
                 {/* Browsing & Link Opening Preference Card */}
                 <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
                   <div className="flex items-center justify-between">
@@ -1161,6 +1183,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         const current = localStorage.getItem('apexnav_open_new_tab') !== 'false';
                         const next = !current;
                         localStorage.setItem('apexnav_open_new_tab', String(next));
+                        window.dispatchEvent(new Event(PREFERENCE_EVENT));
                         setOpenInNewTabPref(next);
                         showMsg(next ? '已开启：在新标签页中打开网址' : '已设置为：在当前标签页中打开网址', 'success');
                       }}
@@ -1276,7 +1299,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {isEnvAuth ? (
                     <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-xs text-indigo-900 dark:text-indigo-200 leading-relaxed">
-                      🛡️ **提示**：当前已开启 Cloudflare 环境变量秘钥固定校验。若需修改密码，请登录 Cloudflare 控制台在 `Environment Variables` 中修改 `ADMIN_PASSWORD` 即可。
+                      <Shield className="w-4 h-4 inline-block align-text-bottom mr-1" aria-hidden />提示：当前已开启 Cloudflare 环境变量秘钥固定校验。若需修改密码，请登录 Cloudflare 控制台在 `Environment Variables` 中修改 `ADMIN_PASSWORD` 即可。
                     </div>
                   ) : (
                     <form onSubmit={handleChangeCredentials} className="space-y-3">
@@ -1423,7 +1446,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg shadow-xs">
-                  {importPreview.fileType === 'html' ? '🌐' : '📦'}
+                  {importPreview.fileType === 'html' ? <Globe className="w-5 h-5" /> : <Database className="w-5 h-5" />}
                 </div>
                 <div>
                   <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1454,7 +1477,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {importPreview.result.stats.totalCategories} <span className="text-xs font-normal text-slate-400">个</span>
                   </div>
                 </div>
-                <div className="text-2xl opacity-60">📁</div>
+                <FolderPlus className="w-6 h-6 text-slate-400" aria-hidden />
               </div>
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
                 <div>
@@ -1463,7 +1486,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {importPreview.result.stats.totalSites} <span className="text-xs font-normal text-slate-400">个</span>
                   </div>
                 </div>
-                <div className="text-2xl opacity-60">🔖</div>
+                <Layers className="w-6 h-6 text-indigo-400" aria-hidden />
               </div>
             </div>
 
@@ -1481,7 +1504,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       key={cat.id}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-700/80 border border-slate-200/60 dark:border-slate-600/50 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-2xs"
                     >
-                      <span>{cat.icon || '📁'}</span>
+                      <CategoryIcon icon={cat.icon} name={cat.name} className="w-3.5 h-3.5" />
                       <span>{cat.name}</span>
                       <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
                         {count}
@@ -1495,7 +1518,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Import Mode Radio */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                请选择导入方式：
+                请选择导入方式（合并只导入书签；替换同时恢复备份中的节点、小组件和偏好）：
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <button
@@ -1509,7 +1532,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <span className="text-emerald-500">➕</span>
+                      <Plus className="w-3.5 h-3.5 text-emerald-500" aria-hidden />
                       追加合并
                     </span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
@@ -1532,7 +1555,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <span className="text-rose-500">🔄</span>
+                      <RefreshCw className="w-3.5 h-3.5 text-rose-500" aria-hidden />
                       全新覆盖
                     </span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 font-bold">
@@ -1540,7 +1563,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-                    清空现有所有数据，仅使用导入的书签结构（操作前建议先备份）。
+                    替换分类和网址，并恢复文件中包含的节点、小组件及偏好；操作前自动下载当前备份。
                   </p>
                 </button>
               </div>

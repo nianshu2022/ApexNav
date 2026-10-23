@@ -10,6 +10,13 @@ import { PinModal } from './components/PinModal';
 import { CommandBar } from './components/CommandBar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { syncStatus, SYNC_EVENT } from './utils/syncState';
+import { PROFILE_EVENT } from './utils/profileStorage';
+import { restoreBackupExtras } from './utils/backup';
+import type { BackupExtras } from './utils/backup';
+import { validateNavigation } from '../shared/navigation';
+import { openLink } from './utils/preferences';
+import { Heart } from 'lucide-react';
 import type { SearchEngineKey, Category, Site } from './types';
 import {
   getStoredCategories,
@@ -22,6 +29,7 @@ import {
   syncUserWithD1,
   getWidgetConfig,
   saveWidgetConfig,
+  retryPendingSync,
 } from './utils/storage';
 import type { WidgetConfig } from './types';
 
@@ -44,21 +52,22 @@ const APPLE_MACOS_WALLPAPERS = [
 // Inner app component — uses AuthContext
 function AppInner() {
   const { isAdmin, currentUsername } = useAuth();
+  const [settingsTab, setSettingsTab] = useState<'sites' | 'cloud'>('sites');
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('apexnav_dark');
-    if (saved !== null) return JSON.parse(saved);
+    if (saved === 'true' || saved === 'false') return saved === 'true';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   const [showWidgets, setShowWidgets] = useState<boolean>(() => {
     const saved = localStorage.getItem('apexnav_widgets');
-    return saved !== null ? JSON.parse(saved) : true;
+    return saved !== 'false';
   });
 
   const [bingBg, setBingBg] = useState<boolean>(() => {
     const saved = localStorage.getItem('apexnav_bing_bg');
-    return saved !== null ? JSON.parse(saved) : false;
+    return saved === 'true';
   });
 
   const [wallpaperIdx, setWallpaperIdx] = useState<number>(() => {
@@ -77,6 +86,37 @@ function AppInner() {
   const [isWidgetHubOpen, setIsWidgetHubOpen] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
+  const [sync, setSync] = useState(() => syncStatus(currentUsername));
+  const [widgetRevision, setWidgetRevision] = useState(0);
+
+  useEffect(() => {
+    const update = () => setSync(syncStatus(currentUsername));
+    const retry = () => { if (currentUsername) void retryPendingSync(currentUsername).then(update); };
+    window.addEventListener(SYNC_EVENT, update);
+    window.addEventListener('storage', update);
+    window.addEventListener('online', retry);
+    const timer = setInterval(retry, 30_000);
+    return () => {
+      window.removeEventListener(SYNC_EVENT, update);
+      window.removeEventListener('storage', update);
+      window.removeEventListener('online', retry);
+      clearInterval(timer);
+    };
+  }, [currentUsername]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setWidgetConfig(getWidgetConfig());
+      setWidgetRevision((revision) => revision + 1);
+      setDarkMode(localStorage.getItem('apexnav_dark') === 'true');
+      setShowWidgets(localStorage.getItem('apexnav_widgets') !== 'false');
+      setBingBg(localStorage.getItem('apexnav_bing_bg') === 'true');
+      setWallpaperIdx(Number(localStorage.getItem('apexnav_wallpaper_idx') || 0));
+      setCurrentEngine((localStorage.getItem('apexnav_engine') as SearchEngineKey) || 'google');
+    };
+    window.addEventListener(PROFILE_EVENT, refresh);
+    return () => window.removeEventListener(PROFILE_EVENT, refresh);
+  }, []);
 
   // Sync dark mode
   useEffect(() => {
@@ -127,13 +167,15 @@ function AppInner() {
     return () => controller.abort();
   }, [currentUsername]);
 
-  const handleImportData = (importedCats: Category[], importedSites: Site[], syncCloud = true) => {
+  const handleImportData = (importedCats: Category[], importedSites: Site[], syncCloud = true, extras?: BackupExtras) => {
     if (!currentUsername) return;
+    validateNavigation(importedCats, importedSites);
+    if (extras) restoreBackupExtras(currentUsername, extras);
     setCategories(importedCats);
     setSites(importedSites);
     saveCategories(importedCats, currentUsername);
     saveSites(importedSites, currentUsername);
-    if (syncCloud) syncUserWithD1(currentUsername, importedCats, importedSites);
+    if (syncCloud) void syncUserWithD1(currentUsername, importedCats, importedSites, extras?.nodes);
   };
 
   const handleResetDefault = () => {
@@ -196,9 +238,12 @@ function AppInner() {
   const handleDeleteCategory = (id: string) => {
     if (!currentUsername) return;
     const updated = categories.filter((c) => c.id !== id);
+    const remainingSites = sites.filter((site) => site.category_id !== id);
     setCategories(updated);
+    setSites(remainingSites);
     saveCategories(updated, currentUsername);
-    syncUserWithD1(currentUsername, updated, sites);
+    saveSites(remainingSites, currentUsername);
+    void syncUserWithD1(currentUsername, updated, remainingSites);
   };
 
   const handleTogglePin = (site: Site) => {
@@ -259,15 +304,23 @@ function AppInner() {
           onOpenCommandBar={() => setIsCommandBarOpen(true)}
         />
 
+        {sync.state !== 'idle' && (
+          <div role="status" className="mx-auto w-full max-w-7xl px-4 py-2 text-sm text-amber-800 dark:text-amber-200 flex flex-wrap items-center gap-3">
+            <span>{sync.message}</span>
+            <button type="button" onClick={() => currentUsername && void retryPendingSync(currentUsername)} className="underline cursor-pointer">重试同步</button>
+            <button type="button" onClick={() => { setSettingsTab('cloud'); setIsSettingsOpen(true); }} className="underline cursor-pointer">备份与同步设置</button>
+          </div>
+        )}
         <SearchHero
           currentEngine={currentEngine}
           sites={sites}
           onChangeEngine={handleChangeEngine}
-          onSearchSubmit={(url: string) => window.open(url, '_blank')}
+          onSearchSubmit={openLink}
         />
 
         {showWidgets && (
           <WidgetsGrid
+            key={widgetRevision}
             isAdmin={isAdmin}
             widgetConfig={widgetConfig}
             onReorder={handleWidgetConfigChange}
@@ -284,7 +337,7 @@ function AppInner() {
           onAddCategory={handleAddCategory}
           onDeleteCategory={handleDeleteCategory}
           onTogglePin={handleTogglePin}
-          onSiteClick={(site) => window.open(site.url, '_blank')}
+          onSiteClick={(site) => openLink(site.url)}
         />
       </div>
 
@@ -295,7 +348,7 @@ function AppInner() {
         <p className="flex items-center justify-center gap-1.5 tracking-wide">
           <span>ApexNav © {new Date().getFullYear()}</span>
           <span className="opacity-40">·</span>
-          <span>Made with <span className="text-rose-400">♥</span> by 念舒</span>
+          <span className="inline-flex items-center gap-1">Made with <Heart className="w-3 h-3 text-rose-400" aria-label="爱心" /> by 念舒</span>
           <span className="opacity-40">·</span>
           <span className={bingBg ? 'text-indigo-300 font-semibold' : 'text-indigo-600 dark:text-indigo-400 font-semibold'}>Cloudflare</span>
           <span className="opacity-40">·</span>
@@ -320,7 +373,7 @@ function AppInner() {
         onToggleWidgets={handleToggleWidgets}
         onOpenSettings={() => { setIsSettingsOpen(true); setIsCommandBarOpen(false); }}
         onChangeEngine={handleChangeEngine}
-        onSiteClick={(site) => window.open(site.url, '_blank')}
+        onSiteClick={(site) => openLink(site.url)}
       />
 
       {/* Standalone Widget Hub Modal */}
@@ -338,12 +391,14 @@ function AppInner() {
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
         onSuccess={() => setIsPinModalOpen(false)}
+        onConfigureBackend={() => { setIsPinModalOpen(false); setSettingsTab('cloud'); setIsSettingsOpen(true); }}
       />
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        initialTab={settingsTab}
+        onClose={() => { setIsSettingsOpen(false); setSettingsTab('sites'); }}
         categories={categories}
         sites={sites}
         onImportData={handleImportData}

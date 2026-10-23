@@ -6,6 +6,8 @@ import {
 import type { Category, Site } from '../types';
 import { filterAndRankSites, type MatchedSite } from '../utils/searchMatcher';
 import { fetchSiteMetadata } from '../utils/siteParser';
+import { openLink, usePreferences } from '../utils/preferences';
+import { CategoryIcon, CategoryIconPicker } from './SvgIcon';
 
 interface BookmarkGridProps {
   categories: Category[];
@@ -80,7 +82,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
         description: meta.description || prev.description,
         icon: meta.icon || prev.icon,
       }));
-      setAiParseTip({ text: '✨ 智能抓取成功！', isError: false });
+      setAiParseTip({ text: '智能抓取成功！', isError: false });
       setTimeout(() => setAiParseTip(null), 3000);
     } catch (err: any) {
       console.error('AI parse error:', err);
@@ -94,7 +96,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCatForm, setNewCatForm] = useState({
     name: '',
-    icon: '🔖',
+    icon: 'pin',
   });
 
   const [gridSearch, setGridSearch] = useState('');
@@ -105,9 +107,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
     : sites.filter((s) => s.category_id === activeCategoryId);
   const pinnedSites = sites.filter((s) => s.pinned);
 
-  const [openInNewTab] = useState<boolean>(() => {
-    return localStorage.getItem('apexnav_open_new_tab') !== 'false';
-  });
+  const openInNewTab = usePreferences().target === '_blank';
 
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
@@ -243,9 +243,9 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
 
     onAddCategory({
       name: newCatForm.name.trim(),
-      icon: newCatForm.icon.trim() || '🔖',
+      icon: newCatForm.icon,
     });
-    setNewCatForm({ name: '', icon: '🔖' });
+    setNewCatForm({ name: '', icon: 'pin' });
     setIsCategoryModalOpen(false);
   };
 
@@ -325,7 +325,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                       : 'bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:scale-[1.02] border border-slate-200/60 dark:border-slate-700/60 shadow-xs'
                   }`}
                 >
-                  <span className="transition-transform duration-300 group-hover:scale-125">{cat.icon}</span>
+                  <CategoryIcon icon={cat.icon} name={cat.name} className="w-4 h-4 transition-transform duration-300 group-hover:scale-125" />
                   <span>{cat.name}</span>
                   <span
                     className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono font-bold transition-all ${
@@ -428,7 +428,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
             )}
           </div>
         ) : filteredSites.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400 dark:text-slate-500 glass-card rounded-3xl">
+          <div className="col-span-full py-12 text-center text-slate-400 dark:text-slate-500 glass-card liquid-surface rounded-3xl">
             <Globe className="w-12 h-12 mx-auto mb-3 opacity-40 animate-bounce" />
             <p className="text-sm font-medium">
               {isSearchActive ? `未找到与 “${gridSearch}” 相关的网址` : '当前分类下暂无网址'}
@@ -453,7 +453,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
           filteredSites.map((site) => (
             <div
               key={site.id}
-              className={`group relative px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-white/80 dark:bg-slate-800/90 border shadow-xs hover:shadow-xl dark:shadow-slate-900/50 glass-card transition-all duration-300 ease-out hover:-translate-y-1.5 flex items-center min-w-0 ${
+              className={`group relative px-3.5 py-3 sm:px-4 sm:py-3.5 rounded-2xl bg-white/80 dark:bg-slate-800/90 border shadow-xs hover:shadow-xl dark:shadow-slate-900/50 glass-card liquid-surface transition-all duration-300 ease-out hover:-translate-y-1.5 flex items-center min-w-0 ${
                 site.pinned
                   ? 'border-amber-300/60 dark:border-amber-600/40 hover:border-amber-400/70 dark:hover:border-amber-500/60'
                   : 'border-slate-200/60 dark:border-slate-600/50 hover:border-indigo-500/40 dark:hover:border-indigo-400/50'
@@ -637,7 +637,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
                     ) : (
                       <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                     )}
-                    {isAiParsing ? '解析中...' : '✨ AI 智能抓取标题与图标'}
+                    {isAiParsing ? '解析中...' : 'AI 智能抓取标题与图标'}
                   </button>
                 </div>
                 <input
@@ -741,15 +741,9 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  分类 Emoji 图标
+                  分类图标
                 </label>
-                <input
-                  type="text"
-                  value={newCatForm.icon}
-                  onChange={(e) => setNewCatForm({ ...newCatForm, icon: e.target.value })}
-                  placeholder="例如: 🛠️"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                <CategoryIconPicker value={newCatForm.icon} onChange={(icon) => setNewCatForm({ ...newCatForm, icon })} />
               </div>
 
               <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -787,7 +781,7 @@ export const BookmarkGrid: React.FC<BookmarkGridProps> = ({
 
           <button
             onClick={() => {
-              window.open(contextMenu.site!.url, '_blank');
+              openLink(contextMenu.site!.url);
               setContextMenu((prev) => ({ ...prev, isOpen: false }));
             }}
             className="w-full px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-2 transition-colors cursor-pointer text-left"

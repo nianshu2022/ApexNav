@@ -1,5 +1,10 @@
+import { readProfileValue, writeProfileValue } from './profileStorage';
 import type { Category, Site, TodoItem, WidgetConfig, CountdownEvent } from '../types';
 import { authenticatedFetch, clearAuthSession, getAuthSession, isCurrentSession } from './authSession';
+import { enqueueWrite, pendingWrites, rememberCloudVersion, updatePending, notifySync, archivePending, isOwnPendingKey } from './syncState';
+import type { SyncFields } from './syncState';
+import { validateCategories, validateNavigation, validateNodes } from '../../shared/navigation';
+import { normalizeCountdownIcon } from '../../shared/iconCatalog';
 
 const STORAGE_KEYS = {
   todos: 'apexnav_todos',
@@ -41,12 +46,12 @@ export const buildApiUrl = (endpointPath: string): string => {
 // ─────────────────────────────────────────────────────────
 
 export const DEFAULT_CATEGORIES: Category[] = [
-  { id: '1', name: 'AI',     icon: '🤖', sort_order: 0 },
-  { id: '2', name: '开发设计', icon: '💻', sort_order: 1 },
-  { id: '3', name: '社区论坛', icon: '💬', sort_order: 2 },
-  { id: '4', name: '效率工具', icon: '🛠️', sort_order: 3 },
-  { id: '5', name: '学习资源', icon: '📚', sort_order: 4 },
-  { id: '6', name: '自媒体',  icon: '📢', sort_order: 5 },
+  { id: '1', name: 'AI',     icon: 'bot', sort_order: 0 },
+  { id: '2', name: '开发设计', icon: 'code', sort_order: 1 },
+  { id: '3', name: '社区论坛', icon: 'messages', sort_order: 2 },
+  { id: '4', name: '效率工具', icon: 'tool', sort_order: 3 },
+  { id: '5', name: '学习资源', icon: 'book', sort_order: 4 },
+  { id: '6', name: '自媒体',  icon: 'megaphone', sort_order: 5 },
 ];
 
 export const DEFAULT_SITES: Site[] = [
@@ -118,7 +123,7 @@ export const getStoredCategories = (username?: string | null): Category[] => {
   try {
     const key = `apexnav_categories_${un}`;
     const data = localStorage.getItem(key);
-    if (data !== null) return JSON.parse(data);
+    if (data !== null) return validateCategories(JSON.parse(data));
     // Initialize new account with clean empty workspace
     saveCategories([], un);
     return [];
@@ -131,7 +136,7 @@ export const saveCategories = (categories: Category[], username?: string | null)
   const un = sanitizeUsername(username);
   if (!un) return;
   const key = `apexnav_categories_${un}`;
-  localStorage.setItem(key, JSON.stringify(categories));
+  localStorage.setItem(key, JSON.stringify(validateCategories(categories)));
 };
 
 export const getStoredSites = (username?: string | null): Site[] => {
@@ -181,7 +186,7 @@ export const saveNodes = (nodes: any[], username?: string | null): void => {
 
 export const getStoredTodos = (): TodoItem[] => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.todos);
+    const data = readProfileValue(STORAGE_KEYS.todos);
     return data ? JSON.parse(data) : DEFAULT_TODOS;
   } catch {
     return DEFAULT_TODOS;
@@ -189,36 +194,81 @@ export const getStoredTodos = (): TodoItem[] => {
 };
 
 export const saveTodos = (todos: TodoItem[]): void => {
-  localStorage.setItem(STORAGE_KEYS.todos, JSON.stringify(todos));
+  writeProfileValue(STORAGE_KEYS.todos, JSON.stringify(todos));
 };
 
 export const getStoredNotes = (): string => {
-  return localStorage.getItem(STORAGE_KEYS.notes) || '📝 在这里记录临时的文字、代码片段或待办想法...';
+  return readProfileValue(STORAGE_KEYS.notes) || '在这里记录临时的文字、代码片段或待办想法...';
 };
 
 export const saveNotes = (notes: string): void => {
-  localStorage.setItem(STORAGE_KEYS.notes, notes);
+  writeProfileValue(STORAGE_KEYS.notes, notes);
 };
 
 /** Account-bound Cloudflare D1 Sync Helpers */
 const writeQueues = new Map<string, Promise<boolean>>();
 const revisions = new Map<string, number>();
 
-async function syncFields(username: string | null, fields: { categories?: Category[]; sites?: Site[]; nodes?: any[] }): Promise<boolean> {
+async function syncFields(username: string | null, fields: SyncFields): Promise<boolean> {
   const un = sanitizeUsername(username);
   const session = getAuthSession();
   if (!un || !session || session.username !== un) return false;
   const key = `${session.apiBaseUrl}::${un}`;
   revisions.set(key, (revisions.get(key) || 0) + 1);
-  const body = JSON.stringify({ username: un, ...fields });
-  const pending = (writeQueues.get(key) || Promise.resolve(true)).then(async () => {
+  enqueueWrite(un, fields, session.apiBaseUrl);
+  return retryPendingSync(un);
+}
+
+export async function retryPendingSync(username: string): Promise<boolean> {
+  const session = getAuthSession();
+  if (!session || session.username !== username) return false;
+  const key = `${session.apiBaseUrl}::${username}`;
+  if (writeQueues.has(key)) return writeQueues.get(key)!;
+  const pending = Promise.resolve().then(async () => {
     try {
-      const res = await authenticatedFetch('/api/data', session, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-      });
-      if (!res?.ok) return false;
-      const data = await res.json();
-      return data.success === true && data.isD1Bound === true;
+      while (isCurrentSession(session)) {
+        const entry = pendingWrites(username, session.apiBaseUrl)[0];
+        if (!entry) return true;
+        const { write } = entry;
+        if (write.state === 'conflict') return false;
+        if (!write.baseVersion) {
+          const response = await authenticatedFetch(`/api/data?username=${encodeURIComponent(username)}`, session);
+          if (!response?.ok) return false;
+          const remote = await response.json();
+          if (!remote.success || !remote.isD1Bound || typeof remote.version !== 'string') return false;
+          // Without a known base, only an empty/new cloud workspace is safe to initialize automatically.
+          if (!remote.isNewUser && [remote.categories, remote.sites, remote.nodes].some((items) => !Array.isArray(items) || items.length)) {
+            updatePending(entry.key, { ...JSON.parse(localStorage.getItem(entry.key)!), state: 'conflict', message: '本地修改缺少同步版本，云端已有数据。请先导出备份，再选择保留哪一份。' });
+            return false;
+          }
+          write.baseVersion = remote.version;
+        }
+        const res = await authenticatedFetch('/api/data', session, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, ...write.fields, baseVersion: write.baseVersion }),
+        });
+        if (!res) return false;
+        if (res.status === 409 || res.status === 400 || res.status === 428) {
+          const data = await res.json();
+          const latest = localStorage.getItem(entry.key);
+          if (latest) updatePending(entry.key, { ...JSON.parse(latest), state: 'conflict', message: data.message || '云端已更新，本地修改已保留，请在设置中处理' });
+          return false;
+        }
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data.success || !data.isD1Bound || typeof data.version !== 'string') return false;
+        const latest = localStorage.getItem(entry.key);
+        if (latest) {
+          const current = JSON.parse(latest);
+          if (current.id === write.id) localStorage.removeItem(entry.key);
+          else updatePending(entry.key, { ...current, baseVersion: data.version });
+        }
+        if (!isCurrentSession(session)) return false;
+        // Replaying another tab's outbox does not refresh this tab's displayed data.
+        if (isOwnPendingKey(entry.key)) rememberCloudVersion(username, data.version, session.apiBaseUrl);
+        notifySync();
+      }
+      return false;
     } catch { return false; }
   });
   writeQueues.set(key, pending);
@@ -233,6 +283,33 @@ export const syncUserWithD1 = (
 export const syncNodesWithD1 = (username: string | null, nodes: any[]): Promise<boolean> =>
   syncFields(username, { nodes });
 
+// Called only after an explicit choice in the conflict dialog. Preserve the old outbox before replacing it.
+export async function resolveCloudConflict(username: string, keepLocal: boolean, fields?: SyncFields) {
+  const session = getAuthSession();
+  if (!session || session.username !== username) throw new Error('请重新登录');
+  const active = writeQueues.get(`${session.apiBaseUrl}::${username}`);
+  if (active) await active;
+  const pendingIds = () => pendingWrites(username).map(({ key, write }) => `${key}:${write.id}`).join('|');
+  const initialPending = pendingIds();
+  const response = await authenticatedFetch(`/api/data?username=${encodeURIComponent(username)}`, session);
+  if (!response?.ok) throw new Error('无法读取云端，已保留本地修改');
+  const remote = await response.json();
+  if (!remote.success || !remote.isD1Bound || typeof remote.version !== 'string' || !isCurrentSession(session)) throw new Error('云端响应无效');
+  if (initialPending !== pendingIds()) throw new Error('处理期间产生了新的本地修改，请重新选择');
+  const navigation = validateNavigation(remote.categories, remote.sites, true);
+  const nodes = validateNodes(remote.nodes || []);
+  archivePending(username);
+  rememberCloudVersion(username, remote.version);
+  if (keepLocal && fields) {
+    if (!await syncFields(username, fields)) throw new Error('上传未完成，本地修改仍已保留');
+    return null;
+  }
+  saveCategories(navigation.categories, username);
+  saveSites(navigation.sites, username);
+  saveNodes(nodes, username);
+  return { ...navigation, nodes };
+}
+
 export const fetchUserD1Data = async (
   username: string | null, signal?: AbortSignal
 ): Promise<{ categories: Category[]; sites: Site[]; nodes: any[] } | null> => {
@@ -240,6 +317,7 @@ export const fetchUserD1Data = async (
   const session = getAuthSession();
   if (!un || !session || session.username !== un || signal?.aborted) return null;
   const key = `${session.apiBaseUrl}::${un}`;
+  if (pendingWrites(un, session.apiBaseUrl).length && !await retryPendingSync(un)) return null;
   // Let already queued edits finish before reading; ignore reads overtaken by a later local edit.
   while (writeQueues.has(key)) {
     if (!await writeQueues.get(key) || signal?.aborted || !isCurrentSession(session)) return null;
@@ -250,11 +328,16 @@ export const fetchUserD1Data = async (
     if (!res?.ok) return null;
     const data = await res.json();
     if (signal?.aborted || !isCurrentSession(session) || revision !== (revisions.get(key) || 0)) return null;
+    if (pendingWrites(un, session.apiBaseUrl).length) return null;
+    if (data.success && data.isD1Bound && data.isNewUser) rememberCloudVersion(un, data.version, session.apiBaseUrl);
     if (data.success && data.isD1Bound && !data.isNewUser && Array.isArray(data.categories) && Array.isArray(data.sites)) {
-      saveCategories(data.categories, un);
-      saveSites(data.sites, un);
-      if (Array.isArray(data.nodes)) saveNodes(data.nodes, un);
-      return { categories: data.categories, sites: data.sites, nodes: data.nodes || [] };
+      const navigation = validateNavigation(data.categories, data.sites, true);
+      const nodes = validateNodes(data.nodes || []);
+      saveCategories(navigation.categories, un);
+      saveSites(navigation.sites, un);
+      saveNodes(nodes, un);
+      rememberCloudVersion(un, data.version, session.apiBaseUrl);
+      return { ...navigation, nodes };
     }
     return null;
   } catch { return null; }
@@ -275,7 +358,7 @@ const DEFAULT_WIDGET_CONFIG: WidgetConfig = [
 
 export const getWidgetConfig = (): WidgetConfig => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.widgets);
+    const data = readProfileValue(STORAGE_KEYS.widgets);
     if (!data) return DEFAULT_WIDGET_CONFIG;
     const parsed: WidgetConfig = JSON.parse(data);
     // Merge: ensure all known widget IDs exist (forward-compat with new widgets)
@@ -295,23 +378,26 @@ export const getWidgetConfig = (): WidgetConfig => {
 };
 
 export const saveWidgetConfig = (config: WidgetConfig): void => {
-  localStorage.setItem(STORAGE_KEYS.widgets, JSON.stringify(config));
+  writeProfileValue(STORAGE_KEYS.widgets, JSON.stringify(config));
 };
 
 // ── Countdown Events ───────────────────────────────────────
 export const DEFAULT_COUNTDOWN_EVENTS: CountdownEvent[] = [
-  { id: 'cde_1', name: '元旦', date: `${new Date().getFullYear() + 1}-01-01`, emoji: '🎆' },
+  { id: 'cde_1', name: '元旦', date: `${new Date().getFullYear() + 1}-01-01`, icon: 'party' },
 ];
 
 export const getCountdownEvents = (): CountdownEvent[] => {
   try {
-    const data = localStorage.getItem(STORAGE_KEYS.countdowns);
-    return data ? JSON.parse(data) : DEFAULT_COUNTDOWN_EVENTS;
+    const data = readProfileValue(STORAGE_KEYS.countdowns);
+    if (!data) return DEFAULT_COUNTDOWN_EVENTS;
+    const parsed = JSON.parse(data) as CountdownEvent[];
+    if (!Array.isArray(parsed)) return DEFAULT_COUNTDOWN_EVENTS;
+    return parsed.map(({ emoji, ...event }) => ({ ...event, icon: normalizeCountdownIcon(event.icon || emoji) }));
   } catch {
     return DEFAULT_COUNTDOWN_EVENTS;
   }
 };
 
 export const saveCountdownEvents = (events: CountdownEvent[]): void => {
-  localStorage.setItem(STORAGE_KEYS.countdowns, JSON.stringify(events));
+  writeProfileValue(STORAGE_KEYS.countdowns, JSON.stringify(events.map(({ emoji, ...event }) => ({ ...event, icon: normalizeCountdownIcon(event.icon || emoji) }))));
 };
