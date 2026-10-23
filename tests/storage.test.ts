@@ -1,4 +1,4 @@
-import { rememberCloudVersion, pendingWrites, syncStatus } from '../src/utils/syncState';
+import { getInvalidCloudSnapshot, hasInvalidCloudData, rememberCloudVersion, pendingWrites, syncStatus } from '../src/utils/syncState';
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deferred, installBrowser } from './helpers';
@@ -203,12 +203,23 @@ test('malformed durable records block hydration and preserve their raw content',
   }
 });
 
-test('invalid cloud data cannot advance the version used by local edits', async () => {
+test('invalid cloud data is preserved and blocks uploads until the cloud is repaired', async () => {
   globalThis.fetch = async () => json(cloud([{ id: 'invalid' }]));
   assert.equal(await fetchUserD1Data('alice'), null);
-  globalThis.fetch = async (_url, init) => {
-    assert.equal(JSON.parse(String(init?.body)).baseVersion, 'v0');
-    return json(cloud());
-  };
-  assert.equal(await syncUserWithD1('alice', [], []), true);
+  assert.equal(hasInvalidCloudData('alice'), true);
+  assert.deepEqual(getInvalidCloudSnapshot('alice')?.sites, [{ id: 'invalid' }]);
+  globalThis.fetch = async () => { throw new Error('quarantined cloud must not be overwritten'); };
+  assert.equal(await syncUserWithD1('alice', [], []), false);
+  assert.equal(pendingWrites('alice').length, 1);
+  assert.equal(syncStatus('alice').state, 'conflict');
+});
+
+test('a later valid cloud read releases the quarantine without discarding its recovery copy', async () => {
+  globalThis.fetch = async () => json(cloud([{ id: 'bad' }]));
+  assert.equal(await fetchUserD1Data('alice'), null);
+  assert.equal(hasInvalidCloudData('alice'), true);
+  globalThis.fetch = async () => json(cloud([]));
+  assert.deepEqual((await fetchUserD1Data('alice'))?.sites, []);
+  assert.equal(hasInvalidCloudData('alice'), false);
+  assert.deepEqual(getInvalidCloudSnapshot('alice')?.sites, [{ id: 'bad' }]);
 });

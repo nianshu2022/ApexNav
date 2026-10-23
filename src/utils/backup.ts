@@ -2,7 +2,7 @@ import { validateNavigation, validateNodes } from '../../shared/navigation';
 import type { MonitoredNode } from '../../shared/navigation';
 import { exportProfile, restoreProfile, validateProfile, PROFILE_EVENT } from './profileStorage';
 import { getStoredNodes, saveNodes } from './storage';
-import { getSyncRecovery, pendingWrites } from './syncState';
+import { getInvalidCloudSnapshot, getSyncRecovery, pendingWrites } from './syncState';
 import type { Category, Site } from '../types';
 import { PREFERENCE_EVENT } from './preferences';
 
@@ -39,6 +39,7 @@ export function createWorkspaceBackup(username: string, categories: Category[], 
       const value = localStorage.getItem(key); return value === null ? [] : [[key, value]];
     })),
     recovery: getSyncRecovery(username), pending: pendingWrites(username).map(({ write }) => write),
+    invalidCloudRecovery: getInvalidCloudSnapshot(username),
   };
 }
 
@@ -57,6 +58,18 @@ export function downloadWorkspaceBackup(username: string, categories: Category[]
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url; link.download = `ApexNav-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function downloadInvalidCloudSnapshot(username: string): void {
+  const snapshot = getInvalidCloudSnapshot(username);
+  if (!snapshot) throw new Error('浏览器没有保存原始快照；云端原始数据仍在服务器，请勿覆盖云端');
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ApexNav-cloud-recovery-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

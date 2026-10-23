@@ -10,6 +10,56 @@ export const SYNC_EVENT = 'apexnav_sync_change';
 const writerId = crypto.randomUUID();
 const viewVersions = new Map<string, string>();
 const prefix = (username: string, base = currentApiBase()) => `apexnav_sync_${encodeURIComponent(JSON.stringify([base, username]))}`;
+const invalidCloudScopes = new WeakMap<Storage, Set<string>>();
+const invalidCloudForThisStore = () => {
+  let scopes = invalidCloudScopes.get(localStorage);
+  if (!scopes) { scopes = new Set<string>(); invalidCloudScopes.set(localStorage, scopes); }
+  return scopes;
+};
+
+export interface InvalidCloudSnapshot {
+  savedAt: string;
+  reason: string;
+  version: unknown;
+  categories: unknown;
+  sites: unknown;
+  nodes: unknown;
+}
+
+export function hasInvalidCloudData(username: string, base = currentApiBase()): boolean {
+  const scope = prefix(username, base);
+  return invalidCloudForThisStore().has(scope) || localStorage.getItem(`${scope}:invalid-cloud`) === '1';
+}
+
+export function getInvalidCloudSnapshot(username: string, base = currentApiBase()): InvalidCloudSnapshot | null {
+  const raw = localStorage.getItem(`${prefix(username, base)}:invalid-cloud-recovery`);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as InvalidCloudSnapshot; } catch { return null; }
+}
+
+export function quarantineCloudData(username: string, data: Record<string, unknown>, reason: string, base = currentApiBase()): void {
+  const scope = prefix(username, base);
+  invalidCloudForThisStore().add(scope);
+  viewVersions.delete(scope);
+  try { localStorage.removeItem(`${scope}:version`); } catch {}
+  try { localStorage.setItem(`${scope}:invalid-cloud`, '1'); } catch {}
+  // Preserve the server's original fields separately from validated, renderable local data.
+  try {
+    localStorage.setItem(`${scope}:invalid-cloud-recovery`, JSON.stringify({
+      savedAt: new Date().toISOString(), reason, version: data.version,
+      categories: data.categories, sites: data.sites, nodes: data.nodes,
+    } satisfies InvalidCloudSnapshot));
+  } catch { /* The original remains on the server if local storage is full. */ }
+  notifySync();
+}
+
+export function clearInvalidCloudData(username: string, base = currentApiBase()): void {
+  const scope = prefix(username, base);
+  invalidCloudForThisStore().delete(scope);
+  localStorage.removeItem(`${scope}:invalid-cloud`);
+  // Keep the recovery copy after a repair until the user chooses to remove browser data.
+  notifySync();
+}
 
 export function notifySync(): void { window.dispatchEvent(new Event(SYNC_EVENT)); }
 
@@ -69,6 +119,7 @@ export function updatePending(key: string, write: PendingWrite): void {
 }
 
 export function syncStatus(username: string | null): { state: 'idle' | 'pending' | 'conflict'; message: string } {
+  if (username && hasInvalidCloudData(username)) return { state: 'conflict', message: '云端书签或监控节点包含不符合当前规则的数据；已保留原始内容并暂停同步。请到备份与同步设置下载云端原始数据。' };
   const writes = username ? pendingWrites(username) : [];
   const conflict = writes.find(({ write }) => write.state === 'conflict');
   if (conflict) return { state: 'conflict', message: conflict.write.message || '云端已发生变化，本地修改已保留，请在设置中处理同步冲突' };

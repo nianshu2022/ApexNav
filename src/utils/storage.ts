@@ -1,7 +1,7 @@
 import { readProfileValue, writeProfileValue } from './profileStorage';
 import type { Category, Site, TodoItem, WidgetConfig, CountdownEvent } from '../types';
 import { authenticatedFetch, clearAuthSession, getAuthSession, isCurrentSession } from './authSession';
-import { enqueueWrite, pendingWrites, rememberCloudVersion, updatePending, notifySync, archivePending, isOwnPendingKey } from './syncState';
+import { enqueueWrite, pendingWrites, rememberCloudVersion, updatePending, notifySync, archivePending, isOwnPendingKey, hasInvalidCloudData, quarantineCloudData, clearInvalidCloudData } from './syncState';
 import type { SyncFields } from './syncState';
 import { validateCategories, validateNavigation, validateNodes } from '../../shared/navigation';
 import { normalizeCountdownIcon } from '../../shared/iconCatalog';
@@ -222,6 +222,7 @@ async function syncFields(username: string | null, fields: SyncFields): Promise<
 export async function retryPendingSync(username: string): Promise<boolean> {
   const session = getAuthSession();
   if (!session || session.username !== username) return false;
+  if (hasInvalidCloudData(username, session.apiBaseUrl)) return false;
   const key = `${session.apiBaseUrl}::${username}`;
   if (writeQueues.has(key)) return writeQueues.get(key)!;
   const pending = Promise.resolve().then(async () => {
@@ -243,6 +244,7 @@ export async function retryPendingSync(username: string): Promise<boolean> {
           }
           write.baseVersion = remote.version;
         }
+        if (hasInvalidCloudData(username, session.apiBaseUrl)) return false;
         const res = await authenticatedFetch('/api/data', session, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, ...write.fields, baseVersion: write.baseVersion }),
@@ -296,8 +298,16 @@ export async function resolveCloudConflict(username: string, keepLocal: boolean,
   const remote = await response.json();
   if (!remote.success || !remote.isD1Bound || typeof remote.version !== 'string' || !isCurrentSession(session)) throw new Error('云端响应无效');
   if (initialPending !== pendingIds()) throw new Error('处理期间产生了新的本地修改，请重新选择');
-  const navigation = validateNavigation(remote.categories, remote.sites, true);
-  const nodes = validateNodes(remote.nodes || []);
+  let navigation: ReturnType<typeof validateNavigation>;
+  let nodes: ReturnType<typeof validateNodes>;
+  try {
+    navigation = validateNavigation(remote.categories, remote.sites, true);
+    nodes = validateNodes(remote.nodes || []);
+  } catch (error) {
+    quarantineCloudData(username, remote, error instanceof Error ? error.message : '云端数据格式无效', session.apiBaseUrl);
+    throw new Error('云端书签无效，已暂停同步。请先下载云端原始数据');
+  }
+  clearInvalidCloudData(username, session.apiBaseUrl);
   archivePending(username);
   rememberCloudVersion(username, remote.version);
   if (keepLocal && fields) {
@@ -329,10 +339,21 @@ export const fetchUserD1Data = async (
     const data = await res.json();
     if (signal?.aborted || !isCurrentSession(session) || revision !== (revisions.get(key) || 0)) return null;
     if (pendingWrites(un, session.apiBaseUrl).length) return null;
-    if (data.success && data.isD1Bound && data.isNewUser) rememberCloudVersion(un, data.version, session.apiBaseUrl);
-    if (data.success && data.isD1Bound && !data.isNewUser && Array.isArray(data.categories) && Array.isArray(data.sites)) {
-      const navigation = validateNavigation(data.categories, data.sites, true);
-      const nodes = validateNodes(data.nodes || []);
+    if (data.success && data.isD1Bound && data.isNewUser) {
+      clearInvalidCloudData(un, session.apiBaseUrl);
+      rememberCloudVersion(un, data.version, session.apiBaseUrl);
+    }
+    if (data.success && data.isD1Bound && !data.isNewUser) {
+      let navigation: ReturnType<typeof validateNavigation>;
+      let nodes: ReturnType<typeof validateNodes>;
+      try {
+        navigation = validateNavigation(data.categories, data.sites, true);
+        nodes = validateNodes(data.nodes || []);
+      } catch (error) {
+        quarantineCloudData(un, data, error instanceof Error ? error.message : '云端数据格式无效', session.apiBaseUrl);
+        return null;
+      }
+      clearInvalidCloudData(un, session.apiBaseUrl);
       saveCategories(navigation.categories, un);
       saveSites(navigation.sites, un);
       saveNodes(nodes, un);

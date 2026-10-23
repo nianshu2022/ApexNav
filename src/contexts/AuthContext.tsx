@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { saveCategories, saveSites, saveNodes, getStoredCategories, getStoredSites, getStoredNodes, buildApiUrl } from '../utils/storage';
 import { authenticatedFetch, clearAuthSession, currentApiBase, getAuthSession, isCurrentSession, saveAuthSession, SESSION_EVENT, SESSION_KEY } from '../utils/authSession';
 import type { AuthSession } from '../utils/authSession';
-import { pendingWrites, rememberCloudVersion } from '../utils/syncState';
+import { clearInvalidCloudData, pendingWrites, quarantineCloudData, rememberCloudVersion } from '../utils/syncState';
 import { validateNavigation, validateNodes } from '../../shared/navigation';
 import { copyProfile } from '../utils/profileStorage';
 
@@ -34,16 +34,25 @@ function acceptLogin(data: any, apiBaseUrl: string): void {
   if (!data.success || typeof data.user !== 'string' || !data.user
     || typeof data.token !== 'string' || !data.token || !Number.isFinite(data.expiresAt)
     || data.expiresAt <= Date.now()) throw new Error('登录响应无效，请更新后端后重试');
-  // Empty arrays are valid cloud data. Do not resurrect data deleted on another device.
-  if (data.isD1Bound && !pendingWrites(data.user, apiBaseUrl).length) {
+  if (data.isD1Bound) {
+    let cloud: { navigation: ReturnType<typeof validateNavigation>; nodes: ReturnType<typeof validateNodes> } | null = null;
     if (!data.isNewUser) {
-      const navigation = validateNavigation(data.categories, data.sites, true);
-      const nodes = validateNodes(data.nodes || []);
-      saveCategories(navigation.categories, data.user);
-      saveSites(navigation.sites, data.user);
-      saveNodes(nodes, data.user);
+      try {
+        cloud = { navigation: validateNavigation(data.categories, data.sites, true), nodes: validateNodes(data.nodes || []) };
+        clearInvalidCloudData(data.user, apiBaseUrl);
+      } catch (error) {
+        quarantineCloudData(data.user, data, error instanceof Error ? error.message : '云端数据格式无效', apiBaseUrl);
+      }
+    } else clearInvalidCloudData(data.user, apiBaseUrl);
+    // Empty arrays are valid cloud data. Do not resurrect data deleted on another device.
+    if (!pendingWrites(data.user, apiBaseUrl).length && !cloud && data.isNewUser) {
+      rememberCloudVersion(data.user, data.version, apiBaseUrl);
+    } else if (!pendingWrites(data.user, apiBaseUrl).length && cloud) {
+      saveCategories(cloud.navigation.categories, data.user);
+      saveSites(cloud.navigation.sites, data.user);
+      saveNodes(cloud.nodes, data.user);
+      rememberCloudVersion(data.user, data.version, apiBaseUrl);
     }
-    rememberCloudVersion(data.user, data.version, apiBaseUrl);
   }
   saveAuthSession({ username: data.user, token: data.token, expiresAt: data.expiresAt, apiBaseUrl });
 }

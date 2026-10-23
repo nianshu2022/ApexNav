@@ -10,7 +10,7 @@ import { PinModal } from './components/PinModal';
 import { CommandBar } from './components/CommandBar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { syncStatus, SYNC_EVENT } from './utils/syncState';
+import { hasInvalidCloudData, syncStatus, SYNC_EVENT } from './utils/syncState';
 import { PROFILE_EVENT } from './utils/profileStorage';
 import { restoreBackupExtras } from './utils/backup';
 import type { BackupExtras } from './utils/backup';
@@ -307,7 +307,7 @@ function AppInner() {
         {sync.state !== 'idle' && (
           <div role="status" className="mx-auto w-full max-w-7xl px-4 py-2 text-sm text-amber-800 dark:text-amber-200 flex flex-wrap items-center gap-3">
             <span>{sync.message}</span>
-            <button type="button" onClick={() => currentUsername && void retryPendingSync(currentUsername)} className="underline cursor-pointer">重试同步</button>
+            {currentUsername && !hasInvalidCloudData(currentUsername) && <button type="button" onClick={() => void retryPendingSync(currentUsername)} className="underline cursor-pointer">重试同步</button>}
             <button type="button" onClick={() => { setSettingsTab('cloud'); setIsSettingsOpen(true); }} className="underline cursor-pointer">备份与同步设置</button>
           </div>
         )}

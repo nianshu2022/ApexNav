@@ -7,7 +7,7 @@ import { getStoredSites, saveCategories, saveNodes, saveSites } from '../src/uti
 import App from '../src/App';
 import { BookmarkGrid } from '../src/components/BookmarkGrid';
 import { deferred, installBrowser } from './helpers';
-import { enqueueWrite, pendingWrites } from '../src/utils/syncState';
+import { enqueueWrite, getInvalidCloudSnapshot, hasInvalidCloudData, pendingWrites, syncStatus } from '../src/utils/syncState';
 
 let auth: ReturnType<typeof useAuth>;
 function Probe() { auth = useAuth(); return null; }
@@ -85,6 +85,27 @@ test('successful login accepts empty cloud data and sends only the password hash
     assert.deepEqual(getStoredSites('alice'), []);
     await act(async () => auth.logout());
     assert.equal(auth.currentUsername, null);
+  } finally { await act(async () => view.unmount()); }
+});
+
+test('valid credentials still log in when legacy cloud bookmarks have an invalid URL', async () => {
+  const local = { id: 'local', category_id: 'a', name: 'Local', url: 'https://example.com' };
+  const invalid = { id: 'legacy', category_id: 'a', name: 'Legacy', url: 'javascript:alert(1)' };
+  saveSites([local], 'alice');
+  const view = await mountAuth();
+  try {
+    globalThis.fetch = async (_url, init) => json(init?.body
+      ? { ...loginData(), isNewUser: false, version: 'v1', categories: [{ id: 'a', name: 'A' }], sites: [invalid] }
+      : { success: true });
+    const errors: string[] = [];
+    await act(async () => { assert.equal(await auth.login('alice', 'test-password', (message) => errors.push(message)), true); });
+    assert.deepEqual(errors, []);
+    assert.equal(auth.currentUsername, 'alice');
+    assert.equal(getAuthSession()?.username, 'alice');
+    assert.deepEqual(getStoredSites('alice'), [local]);
+    assert.equal(hasInvalidCloudData('alice'), true);
+    assert.deepEqual(getInvalidCloudSnapshot('alice')?.sites, [invalid]);
+    assert.equal(syncStatus('alice').state, 'conflict');
   } finally { await act(async () => view.unmount()); }
 });
 

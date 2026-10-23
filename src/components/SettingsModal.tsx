@@ -9,9 +9,9 @@ import {
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { syncUserWithD1, fetchUserD1Data, getApiBaseUrl, saveApiBaseUrl, resolveCloudConflict, getStoredNodes } from '../utils/storage';
-import { downloadWorkspaceBackup } from '../utils/backup';
+import { downloadInvalidCloudSnapshot, downloadWorkspaceBackup } from '../utils/backup';
 import type { BackupExtras } from '../utils/backup';
-import { pendingWrites } from '../utils/syncState';
+import { hasInvalidCloudData, pendingWrites } from '../utils/syncState';
 import { hasLegacyProfile, importLegacyProfile } from '../utils/profileStorage';
 import { MAX_BACKUP_BYTES } from '../../shared/navigation';
 import { PREFERENCE_EVENT, usePreferences } from '../utils/preferences';
@@ -1006,6 +1006,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* ── TAB 3: 云端与数据 (Cloud Sync & Backup) ── */}
             {activeTab === 'cloud' && (
               <div className="space-y-5">
+                {currentUsername && hasInvalidCloudData(currentUsername) && (
+                  <div role="alert" className="p-4 rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 space-y-3 text-sm">
+                    <p>云端书签或监控节点包含不符合当前规则的网址或图标地址。登录已恢复，但自动同步已暂停，云端原始数据不会被覆盖。</p>
+                    <p>请先保存原始数据，再检查其中的网址；修复云端数据后可点击下方“从云端数据库拉取最新”。</p>
+                    <button type="button" className="underline cursor-pointer" onClick={() => {
+                      try { downloadInvalidCloudSnapshot(currentUsername); showMsg('已发起云端原始数据下载，请确认文件已保存。', 'success'); }
+                      catch (error) { showMsg(error instanceof Error ? error.message : '原始数据下载失败', 'error'); }
+                    }}>下载云端原始数据</button>
+                  </div>
+                )}
                 {/* Extension & Remote Endpoint Configuration Card */}
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
                   <div className="flex items-center justify-between">
@@ -1065,7 +1075,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             showMsg('上传未完成，本地修改已保留。请检查网络或处理同步冲突。', 'error');
                           }
                         }}
-                        className="px-4 py-2 rounded-2xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
+                        disabled={hasInvalidCloudData(currentUsername)}
+                        className="px-4 py-2 rounded-2xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-500/30 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Database className="w-3.5 h-3.5" />
                         一键上传至云端数据库
@@ -1091,7 +1102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
-                {currentUsername && pendingWrites(currentUsername).length > 0 && (
+                {currentUsername && !hasInvalidCloudData(currentUsername) && pendingWrites(currentUsername).length > 0 && (
                   <div className="p-4 rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 space-y-3 text-sm">
                     <p>本地还有待同步修改。普通拉取不会覆盖这些内容；需要选择版本时，请先保留备份。</p>
                     <div className="flex flex-wrap gap-3">
