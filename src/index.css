@@ -58,6 +58,17 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(155%);
 }
 
+/* The refraction library is limited to the wallpaper clock; keep its text opaque. */
+.apex-liquid-clock .glass {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.dark .apex-liquid-clock .glass {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(15, 23, 42, 0.52);
+}
+
 .header-actions > button {
   display: inline-flex;
   align-items: center;

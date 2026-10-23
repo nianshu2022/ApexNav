@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { saveCategories, saveSites, saveNodes, getStoredCategories, getStoredSites, getStoredNodes, buildApiUrl } from '../utils/storage';
 import { authenticatedFetch, clearAuthSession, currentApiBase, getAuthSession, isCurrentSession, saveAuthSession, SESSION_EVENT, SESSION_KEY } from '../utils/authSession';
 import type { AuthSession } from '../utils/authSession';
-import { clearInvalidCloudData, pendingWrites, quarantineCloudData, rememberCloudVersion } from '../utils/syncState';
+import { clearInvalidCloudData, pendingWrites, quarantineCloudData, rememberCloudSnapshot } from '../utils/syncState';
 import { validateNavigation, validateNodes } from '../../shared/navigation';
 import { copyProfile } from '../utils/profileStorage';
 
@@ -46,12 +46,12 @@ function acceptLogin(data: any, apiBaseUrl: string): void {
     } else clearInvalidCloudData(data.user, apiBaseUrl);
     // Empty arrays are valid cloud data. Do not resurrect data deleted on another device.
     if (!pendingWrites(data.user, apiBaseUrl).length && !cloud && data.isNewUser) {
-      rememberCloudVersion(data.user, data.version, apiBaseUrl);
+      rememberCloudSnapshot(data.user, data.version, { categories: [], sites: [], nodes: [] }, apiBaseUrl);
     } else if (!pendingWrites(data.user, apiBaseUrl).length && cloud) {
       saveCategories(cloud.navigation.categories, data.user);
       saveSites(cloud.navigation.sites, data.user);
       saveNodes(cloud.nodes, data.user);
-      rememberCloudVersion(data.user, data.version, apiBaseUrl);
+      rememberCloudSnapshot(data.user, data.version, { ...cloud.navigation, nodes: cloud.nodes }, apiBaseUrl);
     }
   }
   saveAuthSession({ username: data.user, token: data.token, expiresAt: data.expiresAt, apiBaseUrl });

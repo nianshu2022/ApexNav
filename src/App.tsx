@@ -10,7 +10,7 @@ import { PinModal } from './components/PinModal';
 import { CommandBar } from './components/CommandBar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { hasInvalidCloudData, syncStatus, SYNC_EVENT } from './utils/syncState';
+import { CLOUD_MERGE_EVENT, hasInvalidCloudData, syncStatus, SYNC_EVENT } from './utils/syncState';
 import { PROFILE_EVENT } from './utils/profileStorage';
 import { restoreBackupExtras } from './utils/backup';
 import type { BackupExtras } from './utils/backup';
@@ -91,13 +91,20 @@ function AppInner() {
 
   useEffect(() => {
     const update = () => setSync(syncStatus(currentUsername));
+    const merged = (event: Event) => {
+      if ((event as CustomEvent<{ username: string }>).detail?.username !== currentUsername) return;
+      setCategories(getStoredCategories(currentUsername));
+      setSites(getStoredSites(currentUsername));
+    };
     const retry = () => { if (currentUsername) void retryPendingSync(currentUsername).then(update); };
     window.addEventListener(SYNC_EVENT, update);
+    window.addEventListener(CLOUD_MERGE_EVENT, merged);
     window.addEventListener('storage', update);
     window.addEventListener('online', retry);
     const timer = setInterval(retry, 30_000);
     return () => {
       window.removeEventListener(SYNC_EVENT, update);
+      window.removeEventListener(CLOUD_MERGE_EVENT, merged);
       window.removeEventListener('storage', update);
       window.removeEventListener('online', retry);
       clearInterval(timer);

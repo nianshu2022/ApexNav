@@ -4,12 +4,14 @@ import { safeWebUrl } from '../../shared/navigation';
 
 export interface SyncFields { categories?: Category[]; sites?: Site[]; nodes?: any[] }
 export interface PendingWrite {
-  id: string; fields: SyncFields; baseVersion?: string;
+  id: string; fields: SyncFields; baseVersion?: string; baseSnapshot?: SyncFields;
   createdAt: number; state: 'pending' | 'conflict'; message?: string; raw?: string;
 }
 export const SYNC_EVENT = 'apexnav_sync_change';
+export const CLOUD_MERGE_EVENT = 'apexnav_cloud_merge';
 const writerId = crypto.randomUUID();
 const viewVersions = new Map<string, string>();
+const viewSnapshots = new Map<string, { version: string; fields: SyncFields }>();
 const prefix = (username: string, base = currentApiBase()) => `apexnav_sync_${encodeURIComponent(JSON.stringify([base, username]))}`;
 const invalidCloudScopes = new WeakMap<Storage, Set<string>>();
 const invalidCloudForThisStore = () => {
@@ -63,6 +65,7 @@ export function quarantineCloudData(username: string, data: Record<string, unkno
   const scope = prefix(username, base);
   invalidCloudForThisStore().add(scope);
   viewVersions.delete(scope);
+  viewSnapshots.delete(scope);
   try { localStorage.removeItem(`${scope}:version`); } catch {}
   try { localStorage.setItem(`${scope}:invalid-cloud`, '1'); } catch {}
   // Preserve the server's original fields separately from validated, renderable local data.
@@ -99,6 +102,8 @@ export function pendingWrites(username: string, base = currentApiBase()): { key:
         || !['pending', 'conflict'].includes(write.state)
         || !write.fields || typeof write.fields !== 'object' || Array.isArray(write.fields)
         || (write.baseVersion !== undefined && typeof write.baseVersion !== 'string')
+        || (write.baseSnapshot !== undefined && (!write.baseSnapshot || typeof write.baseSnapshot !== 'object' || Array.isArray(write.baseSnapshot)
+          || Object.entries(write.baseSnapshot).some(([field, value]) => !['categories', 'sites', 'nodes'].includes(field) || !Array.isArray(value))))
         || Object.entries(write.fields).some(([field, value]) => !['categories', 'sites', 'nodes'].includes(field) || !Array.isArray(value))) {
         throw new Error('Invalid outbox');
       }
@@ -113,7 +118,14 @@ export function rememberCloudVersion(username: string, version: unknown, base = 
   if (typeof version !== 'string') return;
   const scope = prefix(username, base);
   viewVersions.set(scope, version);
+  viewSnapshots.delete(scope);
   localStorage.setItem(`${scope}:version`, version);
+}
+
+export function rememberCloudSnapshot(username: string, version: unknown, fields: SyncFields, base = currentApiBase()): void {
+  if (typeof version !== 'string') return;
+  rememberCloudVersion(username, version, base);
+  viewSnapshots.set(prefix(username, base), { version, fields: structuredClone(fields) });
 }
 
 export function enqueueWrite(username: string, fields: SyncFields, base = currentApiBase()): void {
@@ -122,10 +134,20 @@ export function enqueueWrite(username: string, fields: SyncFields, base = curren
   const previous = pendingWrites(username, base).find((entry) => entry.key === key)?.write;
   // Only a version observed by this page describes the data currently being edited.
   const version = viewVersions.get(scope);
+  const snapshot = viewSnapshots.get(scope);
+  const baseSnapshot: SyncFields = { ...previous?.baseSnapshot };
+  if (snapshot && snapshot.version === (previous?.baseVersion ?? version)) {
+    for (const field of Object.keys(snapshot.fields) as (keyof SyncFields)[]) {
+      if (baseSnapshot[field] === undefined && snapshot.fields[field] !== undefined) {
+        (baseSnapshot as Record<string, unknown>)[field] = structuredClone(snapshot.fields[field]);
+      }
+    }
+  }
   // Each tab owns a separate durable outbox, so a stale tab cannot erase another tab's queued edits.
   const write: PendingWrite = {
     id: crypto.randomUUID(), fields: { ...previous?.fields, ...fields },
     baseVersion: previous ? previous.baseVersion : version,
+    ...(Object.keys(baseSnapshot).length ? { baseSnapshot } : {}),
     createdAt: previous?.createdAt ?? Date.now(), state: previous?.state ?? 'pending', message: previous?.message,
     ...(previous?.raw === undefined ? {} : { raw: previous.raw }),
   };

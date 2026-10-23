@@ -1,8 +1,9 @@
 import { readProfileValue, writeProfileValue } from './profileStorage';
 import type { Category, Site, TodoItem, WidgetConfig, CountdownEvent } from '../types';
 import { authenticatedFetch, clearAuthSession, getAuthSession, isCurrentSession } from './authSession';
-import { enqueueWrite, pendingWrites, rememberCloudVersion, updatePending, notifySync, archivePending, isOwnPendingKey, hasInvalidCloudData, quarantineCloudData, clearInvalidCloudData, getInvalidCloudSnapshot } from './syncState';
+import { CLOUD_MERGE_EVENT, enqueueWrite, pendingWrites, rememberCloudSnapshot, updatePending, notifySync, archivePending, isOwnPendingKey, hasInvalidCloudData, quarantineCloudData, clearInvalidCloudData, getInvalidCloudSnapshot } from './syncState';
 import type { SyncFields } from './syncState';
+import { mergeSyncFields } from './mergeSync';
 import { validateCategories, validateNavigation, validateNodes } from '../../shared/navigation';
 import { normalizeCountdownIcon } from '../../shared/iconCatalog';
 
@@ -227,8 +228,21 @@ export async function retryPendingSync(username: string): Promise<boolean> {
   if (writeQueues.has(key)) return writeQueues.get(key)!;
   const pending = Promise.resolve().then(async () => {
     try {
+      let mergeAttempts = 0;
+      const mergedOwnKeys = new Set<string>();
+      let mergedOwnData: SyncFields | null = null;
       while (isCurrentSession(session)) {
-        const entry = pendingWrites(username, session.apiBaseUrl)[0];
+        const outbox = pendingWrites(username, session.apiBaseUrl);
+        if (mergedOwnData && !outbox.some(({ key: pendingKey }) => isOwnPendingKey(pendingKey))) {
+          if (mergedOwnData.categories && mergedOwnData.sites && mergedOwnData.nodes) {
+            saveCategories(mergedOwnData.categories, username);
+            saveSites(mergedOwnData.sites, username);
+            saveNodes(mergedOwnData.nodes, username);
+            window.dispatchEvent(new CustomEvent(CLOUD_MERGE_EVENT, { detail: { username } }));
+          }
+          mergedOwnData = null;
+        }
+        const entry = outbox[0];
         if (!entry) return true;
         const { write } = entry;
         if (write.state === 'conflict') return false;
@@ -243,6 +257,7 @@ export async function retryPendingSync(username: string): Promise<boolean> {
             return false;
           }
           write.baseVersion = remote.version;
+          write.baseSnapshot = { categories: [], sites: [], nodes: [] };
         }
         if (hasInvalidCloudData(username, session.apiBaseUrl)) return false;
         const res = await authenticatedFetch('/api/data', session, {
@@ -250,6 +265,40 @@ export async function retryPendingSync(username: string): Promise<boolean> {
           body: JSON.stringify({ username, ...write.fields, baseVersion: write.baseVersion }),
         });
         if (!res) return false;
+        if (res.status === 409 && write.baseSnapshot && mergeAttempts < 2) {
+          mergeAttempts++;
+          const latestResponse = await authenticatedFetch(`/api/data?username=${encodeURIComponent(username)}`, session);
+          if (!latestResponse?.ok) return false;
+          const remote = await latestResponse.json();
+          if (!remote.success || !remote.isD1Bound || typeof remote.version !== 'string' || remote.version === write.baseVersion) return false;
+          let remoteFields: SyncFields;
+          try {
+            remoteFields = { ...validateNavigation(remote.categories, remote.sites, true), nodes: validateNodes(remote.nodes || []) };
+          } catch (error) {
+            quarantineCloudData(username, remote, error instanceof Error ? error.message : '云端数据格式无效', session.apiBaseUrl);
+            return false;
+          }
+          const merged = mergeSyncFields(write.baseSnapshot, write.fields, remoteFields);
+          if (merged) {
+            let valid = true;
+            try {
+              validateNavigation(merged.categories ?? remoteFields.categories, merged.sites ?? remoteFields.sites);
+              validateNodes(merged.nodes ?? remoteFields.nodes);
+            } catch { valid = false; }
+            if (valid) {
+              const latest = localStorage.getItem(entry.key);
+              if (!latest || !isCurrentSession(session)) return false;
+              const current = JSON.parse(latest);
+              if (current.id !== write.id) continue;
+              updatePending(entry.key, { ...current, fields: merged, baseVersion: remote.version, baseSnapshot: remoteFields, state: 'pending', message: undefined });
+              if (isOwnPendingKey(entry.key)) {
+                rememberCloudSnapshot(username, remote.version, remoteFields, session.apiBaseUrl);
+                mergedOwnKeys.add(entry.key);
+              }
+              continue;
+            }
+          }
+        }
         if (res.status === 409 || res.status === 400 || res.status === 428) {
           const data = await res.json();
           const latest = localStorage.getItem(entry.key);
@@ -259,15 +308,24 @@ export async function retryPendingSync(username: string): Promise<boolean> {
         if (!res.ok) return false;
         const data = await res.json();
         if (!data.success || !data.isD1Bound || typeof data.version !== 'string') return false;
+        const acceptedSnapshot = { ...write.baseSnapshot, ...write.fields };
         const latest = localStorage.getItem(entry.key);
+        let ownWriteCompleted = false;
         if (latest) {
           const current = JSON.parse(latest);
-          if (current.id === write.id) localStorage.removeItem(entry.key);
-          else updatePending(entry.key, { ...current, baseVersion: data.version });
+          if (current.id === write.id) {
+            localStorage.removeItem(entry.key);
+            ownWriteCompleted = true;
+          }
+          else updatePending(entry.key, { ...current, baseVersion: data.version, baseSnapshot: acceptedSnapshot });
         }
         if (!isCurrentSession(session)) return false;
         // Replaying another tab's outbox does not refresh this tab's displayed data.
-        if (isOwnPendingKey(entry.key)) rememberCloudVersion(username, data.version, session.apiBaseUrl);
+        if (isOwnPendingKey(entry.key)) {
+          rememberCloudSnapshot(username, data.version, acceptedSnapshot, session.apiBaseUrl);
+          if (ownWriteCompleted && (mergedOwnKeys.has(entry.key) || mergedOwnData)) mergedOwnData = acceptedSnapshot;
+        } else mergedOwnData = null;
+        mergeAttempts = 0;
         notifySync();
       }
       return false;
@@ -309,7 +367,7 @@ export async function resolveCloudConflict(username: string, keepLocal: boolean,
   }
   clearInvalidCloudData(username, session.apiBaseUrl);
   archivePending(username);
-  rememberCloudVersion(username, remote.version);
+  rememberCloudSnapshot(username, remote.version, { ...navigation, nodes });
   if (keepLocal && fields) {
     if (!await syncFields(username, fields)) throw new Error('上传未完成，本地修改仍已保留');
     return null;
@@ -366,7 +424,7 @@ export async function repairInvalidCloudData(username: string, input: unknown): 
     saveCategories(navigation.categories, username);
     saveSites(navigation.sites, username);
     saveNodes(nodes, username);
-    rememberCloudVersion(username, data.version, session.apiBaseUrl);
+    rememberCloudSnapshot(username, data.version, { ...navigation, nodes }, session.apiBaseUrl);
   }
   return { ...navigation, nodes, localEditsPending };
 }
@@ -392,7 +450,7 @@ export const fetchUserD1Data = async (
     if (pendingWrites(un, session.apiBaseUrl).length) return null;
     if (data.success && data.isD1Bound && data.isNewUser) {
       clearInvalidCloudData(un, session.apiBaseUrl);
-      rememberCloudVersion(un, data.version, session.apiBaseUrl);
+      rememberCloudSnapshot(un, data.version, { categories: [], sites: [], nodes: [] }, session.apiBaseUrl);
     }
     if (data.success && data.isD1Bound && !data.isNewUser) {
       let navigation: ReturnType<typeof validateNavigation>;
@@ -408,7 +466,7 @@ export const fetchUserD1Data = async (
       saveCategories(navigation.categories, un);
       saveSites(navigation.sites, un);
       saveNodes(nodes, un);
-      rememberCloudVersion(un, data.version, session.apiBaseUrl);
+      rememberCloudSnapshot(un, data.version, { ...navigation, nodes }, session.apiBaseUrl);
       return { ...navigation, nodes };
     }
     return null;

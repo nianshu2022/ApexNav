@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Moon, Settings, Compass, LayoutGrid, Image as ImageIcon, RefreshCw, Clock, Lock, Search, Coffee, Sunrise } from 'lucide-react';
 
+const LiquidGlass = React.lazy(() => import('liquid-glass-react'));
+
 interface HeaderProps {
   darkMode: boolean;
   showWidgets: boolean;
@@ -32,6 +34,16 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [timeStr, setTimeStr] = useState<string>('');
   const [greeting, setGreeting] = useState<string>('');
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    update();
+    preference.addEventListener?.('change', update);
+    return () => preference.removeEventListener?.('change', update);
+  }, []);
 
   // Update clock & localized greeting
   useEffect(() => {
@@ -81,9 +93,37 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Clock & Action Controls */}
       <div className="header-actions flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 sm:gap-3">
         {/* Prominent Apple-style Digital Clock Glass Badge (Enlarged to 16px-18px) */}
-        <div className="hidden md:flex items-center space-x-2 px-3.5 py-1.5 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-md liquid-surface font-mono font-black text-base sm:text-lg text-slate-900 dark:text-white">
-          <Clock className="w-4 h-4 text-indigo-500" />
-          <span>{timeStr}</span>
+        <div className="hidden md:block relative w-[126px] h-10 shrink-0">
+          {bingBg && !reducedMotion ? (
+            <React.Suspense fallback={
+              <div className="flex h-full items-center gap-2 px-3.5 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-md liquid-surface font-mono font-black text-base text-slate-900 dark:text-white">
+                <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-300" aria-hidden="true" />
+                <span>{timeStr}</span>
+              </div>
+            }>
+              <LiquidGlass
+                className="apex-liquid-clock"
+                displacementScale={32}
+                blurAmount={0.15}
+                aberrationIntensity={0.8}
+                elasticity={0.08}
+                cornerRadius={16}
+                padding="7px 13px"
+                overLight={!darkMode}
+                style={{ position: 'absolute', top: '50%', left: '50%' }}
+              >
+                <span className="flex items-center gap-2 font-mono font-black text-base text-slate-900 dark:text-white">
+                  <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-300" aria-hidden="true" />
+                  {timeStr}
+                </span>
+              </LiquidGlass>
+            </React.Suspense>
+          ) : (
+            <div className="flex h-full items-center gap-2 px-3.5 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-md liquid-surface font-mono font-black text-base text-slate-900 dark:text-white">
+              <Clock className="w-4 h-4 text-indigo-500" aria-hidden="true" />
+              <span>{timeStr}</span>
+            </div>
+          )}
         </div>
 
         {/* Ctrl+K Command Bar Trigger */}

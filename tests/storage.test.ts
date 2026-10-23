@@ -1,4 +1,5 @@
-import { describeInvalidCloudUrls, enqueueWrite, getInvalidCloudSnapshot, hasInvalidCloudData, quarantineCloudData, rememberCloudVersion, pendingWrites, syncStatus } from '../src/utils/syncState';
+import { describeInvalidCloudUrls, enqueueWrite, getInvalidCloudSnapshot, hasInvalidCloudData, quarantineCloudData, rememberCloudSnapshot, rememberCloudVersion, pendingWrites, syncStatus } from '../src/utils/syncState';
+import { mergeSyncFields } from '../src/utils/mergeSync';
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deferred, installBrowser } from './helpers';
@@ -155,6 +156,79 @@ test('conflicts retain the local edit and do not silently retry with a newer clo
   assert.equal(await retryPendingSync('alice'), false);
   assert.equal(requests, 1);
   assert.equal(pendingWrites('alice')[0].write.fields.sites![0].id, 'local');
+});
+
+test('different bookmarks edited on two devices merge without losing either edit', async () => {
+  const categories = [{ id: 'a', name: 'A' }];
+  const a = { id: 'a-site', category_id: 'a', name: 'A', url: 'https://a.example' };
+  const b = { id: 'b-site', category_id: 'a', name: 'B', url: 'https://b.example' };
+  const localA = { ...a, name: 'A local' };
+  const remoteB = { ...b, name: 'B remote' };
+  rememberCloudSnapshot('alice', 'v0', { categories, sites: [a, b], nodes: [] });
+  saveSites([localA, b], 'alice');
+  let posts = 0;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method !== 'POST') return json({ ...cloud([a, remoteB]), categories });
+    posts++;
+    if (posts === 1) return json({ message: 'changed' }, 409);
+    const body = JSON.parse(String(init.body));
+    assert.equal(body.baseVersion, 'v1');
+    assert.deepEqual(body.sites, [localA, remoteB]);
+    return json({ success: true, isD1Bound: true, version: 'v2' });
+  };
+  assert.equal(await syncUserWithD1('alice', categories, [localA, b]), true);
+  assert.equal(posts, 2);
+  assert.deepEqual(getStoredSites('alice'), [localA, remoteB]);
+  assert.equal(pendingWrites('alice').length, 0);
+});
+
+test('two edits to the same bookmark remain a manual conflict', async () => {
+  const categories = [{ id: 'a', name: 'A' }];
+  const before = { id: 'site', category_id: 'a', name: 'Before', url: 'https://example.com' };
+  const local = { ...before, name: 'Local' };
+  const remote = { ...before, name: 'Remote' };
+  rememberCloudSnapshot('alice', 'v0', { categories, sites: [before], nodes: [] });
+  saveSites([local], 'alice');
+  let posts = 0;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method !== 'POST') return json({ ...cloud([remote]), categories });
+    posts++;
+    return json({ message: 'changed' }, 409);
+  };
+  assert.equal(await syncUserWithD1('alice', categories, [local]), false);
+  assert.equal(posts, 1);
+  assert.equal(syncStatus('alice').state, 'conflict');
+  assert.deepEqual(getStoredSites('alice'), [local]);
+});
+
+test('a deletion merges with an independent edit but conflicts with an edit to the deleted bookmark', () => {
+  const a = { id: 'a', category_id: 'c', name: 'A', url: 'https://a.example' };
+  const b = { id: 'b', category_id: 'c', name: 'B', url: 'https://b.example' };
+  const changedB = { ...b, name: 'B remote' };
+  assert.deepEqual(mergeSyncFields({ sites: [a, b] }, { sites: [b] }, { sites: [a, changedB] }), { sites: [changedB] });
+  assert.equal(mergeSyncFields({ sites: [a, b] }, { sites: [b] }, { sites: [{ ...a, name: 'A remote' }, b] }), null);
+});
+
+test('an offline outbox retains its merge baseline for a later retry', async () => {
+  const categories = [{ id: 'c', name: 'C' }];
+  const a = { id: 'a', category_id: 'c', name: 'A', url: 'https://a.example' };
+  const b = { id: 'b', category_id: 'c', name: 'B', url: 'https://b.example' };
+  const localA = { ...a, name: 'A local' };
+  const remoteB = { ...b, name: 'B remote' };
+  rememberCloudSnapshot('alice', 'v0', { categories, sites: [a, b], nodes: [] });
+  globalThis.fetch = async () => { throw new Error('offline'); };
+  assert.equal(await syncUserWithD1('alice', categories, [localA, b]), false);
+  assert.deepEqual(pendingWrites('alice')[0].write.baseSnapshot?.sites, [a, b]);
+  let posts = 0;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method !== 'POST') return json({ ...cloud([a, remoteB]), categories });
+    posts++;
+    if (posts === 1) return json({ message: 'changed' }, 409);
+    return json({ success: true, isD1Bound: true, version: 'v2' });
+  };
+  assert.equal(await retryPendingSync('alice'), true);
+  assert.equal(posts, 2);
+  assert.deepEqual(getStoredSites('alice'), [localA, remoteB]);
 });
 
 test('an outbox from a previous page instance is replayed and never sent to another API service', async () => {
