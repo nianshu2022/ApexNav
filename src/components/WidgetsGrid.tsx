@@ -42,7 +42,6 @@ export const WidgetsGrid: React.FC<WidgetsGridProps> = ({
     .sort((a, b) => a.order - b.order);
 
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
-  const [isHovered, setIsHovered] = useState(false);
   const totalPages = Math.ceil(enabled.length / PAGE_SIZE);
 
   // Auto fallback if currentPageIdx is out of bounds
@@ -52,29 +51,25 @@ export const WidgetsGrid: React.FC<WidgetsGridProps> = ({
     }
   }, [totalPages, currentPageIdx]);
 
-  // Auto Carousel: Turn page every 12s if > 1 page and not hovered
-  useEffect(() => {
-    if (totalPages <= 1 || isHovered) return;
-    const timer = setInterval(() => {
-      setCurrentPageIdx((prev) => (prev + 1) % totalPages);
-    }, 12000);
-    return () => clearInterval(timer);
-  }, [totalPages, isHovered]);
-
-  // Handle Mouse Wheel Scroll for switching widget pages
+  // Handle Horizontal Trackpad / Shift+Wheel for switching widget pages (Never hijack vertical scroll!)
   const wheelCooldown = useRef(false);
   const handleWheel = (e: React.WheelEvent) => {
     if (totalPages <= 1 || wheelCooldown.current) return;
-    if (Math.abs(e.deltaX) > 30 || Math.abs(e.deltaY) > 30) {
+    // Only trigger if user explicitly holds Shift OR performs a purely horizontal trackpad swipe
+    const isShiftScroll = e.shiftKey && Math.abs(e.deltaY) > 20;
+    const isHorizontalSwipe = Math.abs(e.deltaX) > 40 && Math.abs(e.deltaY) < 15;
+
+    if (isShiftScroll || isHorizontalSwipe) {
       wheelCooldown.current = true;
-      if (e.deltaY > 0 || e.deltaX > 0) {
+      const delta = isShiftScroll ? e.deltaY : e.deltaX;
+      if (delta > 0) {
         setCurrentPageIdx((p) => Math.min(totalPages - 1, p + 1));
       } else {
         setCurrentPageIdx((p) => Math.max(0, p - 1));
       }
       setTimeout(() => {
         wheelCooldown.current = false;
-      }, 400);
+      }, 350);
     }
   };
 
@@ -124,8 +119,6 @@ export const WidgetsGrid: React.FC<WidgetsGridProps> = ({
     <section
       className="w-full max-w-7xl mx-auto px-4 my-3 relative group select-none"
       onWheel={handleWheel}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Standard Equal-Width Grid (4 Equal Columns) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 transition-all duration-300">
@@ -161,7 +154,7 @@ export const WidgetsGrid: React.FC<WidgetsGridProps> = ({
                 ? 'opacity-30 cursor-not-allowed text-slate-400'
                 : 'bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-200 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 shadow-sm hover:scale-110 active:scale-95'
             }`}
-            title="上一页组件 (可滚轮切页)"
+            title="上一页小组件"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -191,7 +184,7 @@ export const WidgetsGrid: React.FC<WidgetsGridProps> = ({
                 ? 'opacity-30 cursor-not-allowed text-slate-400'
                 : 'bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-200 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 shadow-sm hover:scale-110 active:scale-95'
             }`}
-            title="下一页组件 (可滚轮切页)"
+            title="下一页小组件"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

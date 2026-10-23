@@ -1,6 +1,5 @@
 import type { Category, Site, TodoItem, WidgetConfig, CountdownEvent } from '../types';
-
-
+import { authenticatedFetch, clearAuthSession, getAuthSession, isCurrentSession } from './authSession';
 
 const STORAGE_KEYS = {
   todos: 'apexnav_todos',
@@ -9,8 +8,32 @@ const STORAGE_KEYS = {
   engine: 'apexnav_engine',
   widgets: 'apexnav_widget_config',
   countdowns: 'apexnav_countdowns',
+  apiBaseUrl: 'apexnav_api_base_url',
 };
 
+export const getApiBaseUrl = (): string => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.apiBaseUrl);
+    if (saved) return saved.replace(/\/+$/, '');
+  } catch {}
+  return '';
+};
+
+export const saveApiBaseUrl = (url: string): void => {
+  const clean = url.trim().replace(/\/+$/, '');
+  const changed = clean !== getApiBaseUrl();
+  localStorage.setItem(STORAGE_KEYS.apiBaseUrl, clean);
+  if (changed) clearAuthSession();
+};
+
+export const buildApiUrl = (endpointPath: string): string => {
+  const base = getApiBaseUrl();
+  const path = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+  if (base) {
+    return `${base}${path}`;
+  }
+  return path;
+};
 
 // ─────────────────────────────────────────────────────────
 // Default demo data (generic, open-source friendly)
@@ -153,6 +176,7 @@ export const saveNodes = (nodes: any[], username?: string | null): void => {
   if (!un) return;
   const key = `apexnav_nodes_${un}`;
   localStorage.setItem(key, JSON.stringify(nodes));
+  window.dispatchEvent(new CustomEvent('apexnav_nodes_change', { detail: { username: un } }));
 };
 
 export const getStoredTodos = (): TodoItem[] => {
@@ -177,49 +201,63 @@ export const saveNotes = (notes: string): void => {
 };
 
 /** Account-bound Cloudflare D1 Sync Helpers */
-export const syncUserWithD1 = async (
-  username: string | null,
-  categories: Category[],
-  sites: Site[],
-  nodes: any[] = []
-): Promise<boolean> => {
+const writeQueues = new Map<string, Promise<boolean>>();
+const revisions = new Map<string, number>();
+
+async function syncFields(username: string | null, fields: { categories?: Category[]; sites?: Site[]; nodes?: any[] }): Promise<boolean> {
   const un = sanitizeUsername(username);
-  if (!un) return false;
-  try {
-    const res = await fetch('/api/data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: un, categories, sites, nodes }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.success === true;
-  } catch {
-    return false;
-  }
-};
+  const session = getAuthSession();
+  if (!un || !session || session.username !== un) return false;
+  const key = `${session.apiBaseUrl}::${un}`;
+  revisions.set(key, (revisions.get(key) || 0) + 1);
+  const body = JSON.stringify({ username: un, ...fields });
+  const pending = (writeQueues.get(key) || Promise.resolve(true)).then(async () => {
+    try {
+      const res = await authenticatedFetch('/api/data', session, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+      });
+      if (!res?.ok) return false;
+      const data = await res.json();
+      return data.success === true && data.isD1Bound === true;
+    } catch { return false; }
+  });
+  writeQueues.set(key, pending);
+  void pending.finally(() => { if (writeQueues.get(key) === pending) writeQueues.delete(key); });
+  return pending;
+}
+
+export const syncUserWithD1 = (
+  username: string | null, categories: Category[], sites: Site[], nodes?: any[]
+): Promise<boolean> => syncFields(username, { categories, sites, ...(nodes === undefined ? {} : { nodes }) });
+
+export const syncNodesWithD1 = (username: string | null, nodes: any[]): Promise<boolean> =>
+  syncFields(username, { nodes });
 
 export const fetchUserD1Data = async (
-  username: string | null
+  username: string | null, signal?: AbortSignal
 ): Promise<{ categories: Category[]; sites: Site[]; nodes: any[] } | null> => {
   const un = sanitizeUsername(username);
-  if (!un) return null;
+  const session = getAuthSession();
+  if (!un || !session || session.username !== un || signal?.aborted) return null;
+  const key = `${session.apiBaseUrl}::${un}`;
+  // Let already queued edits finish before reading; ignore reads overtaken by a later local edit.
+  while (writeQueues.has(key)) {
+    if (!await writeQueues.get(key) || signal?.aborted || !isCurrentSession(session)) return null;
+  }
+  const revision = revisions.get(key) || 0;
   try {
-    const res = await fetch(`/api/data?username=${encodeURIComponent(un)}`);
-    if (!res.ok) return null;
+    const res = await authenticatedFetch(`/api/data?username=${encodeURIComponent(un)}`, session, { signal });
+    if (!res?.ok) return null;
     const data = await res.json();
-    if (data.success && !data.isNewUser && Array.isArray(data.categories) && Array.isArray(data.sites)) {
+    if (signal?.aborted || !isCurrentSession(session) || revision !== (revisions.get(key) || 0)) return null;
+    if (data.success && data.isD1Bound && !data.isNewUser && Array.isArray(data.categories) && Array.isArray(data.sites)) {
       saveCategories(data.categories, un);
       saveSites(data.sites, un);
-      if (Array.isArray(data.nodes)) {
-        saveNodes(data.nodes, un);
-      }
+      if (Array.isArray(data.nodes)) saveNodes(data.nodes, un);
       return { categories: data.categories, sites: data.sites, nodes: data.nodes || [] };
     }
     return null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 };
 
 // ── Widget Config ──────────────────────────────────────────

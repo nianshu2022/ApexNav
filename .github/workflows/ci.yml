@@ -26,5 +26,8 @@ jobs:
       - name: Run oxlint check
         run: npm run lint
 
+      - name: Run regression tests
+        run: npm test
+
       - name: Build TypeScript and Vite bundle
         run: npm run build

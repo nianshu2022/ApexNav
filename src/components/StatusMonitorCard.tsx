@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, RefreshCw, CheckCircle2, Plus, X, Globe, ShieldCheck, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getStoredNodes, saveNodes, DEFAULT_NODES } from '../utils/storage';
+import { getStoredNodes, saveNodes, syncNodesWithD1, DEFAULT_NODES } from '../utils/storage';
 
 interface MonitoredNode {
   id: string;
@@ -18,58 +18,68 @@ interface StatusMonitorCardProps {
 
 export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = false }) => {
   const { currentUsername } = useAuth();
-
-  const [nodes, setNodes] = useState<MonitoredNode[]>(() => {
-    return getStoredNodes(currentUsername);
-  });
-
-  const [checking, setChecking] = useState<boolean>(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [nodes, setNodes] = useState<MonitoredNode[]>(() => getStoredNodes(currentUsername));
+  const nodesRef = useRef(nodes);
+  const revision = useRef(0);
+  const mounted = useRef(false);
+  const [checking, setChecking] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newNodeName, setNewNodeName] = useState('');
   const [newNodeUrl, setNewNodeUrl] = useState('');
 
-  // Listen to auth user switching to reload nodes
-  useEffect(() => {
-    const handleAuthChange = (e: any) => {
-      const un = e.detail?.username !== undefined ? e.detail.username : currentUsername;
-      setNodes(getStoredNodes(un));
-    };
-
-    setNodes(getStoredNodes(currentUsername));
-    window.addEventListener('apexnav_auth_change', handleAuthChange);
-    return () => window.removeEventListener('apexnav_auth_change', handleAuthChange);
-  }, [currentUsername]);
-
   const checkNodeStatus = async (node: MonitoredNode): Promise<MonitoredNode> => {
     const start = performance.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
       await fetch(node.url, { method: 'HEAD', mode: 'no-cors', signal: controller.signal });
-      clearTimeout(timeoutId);
-      const latency = Math.round(performance.now() - start);
-      return { ...node, status: 'online', latency };
+      return { ...node, status: 'online', latency: Math.round(performance.now() - start) };
     } catch {
-      const latency = Math.round(performance.now() - start);
-      return latency < 2950
-        ? { ...node, status: 'online', latency }
-        : { ...node, status: 'offline', latency: undefined };
+      return { ...node, status: 'offline', latency: undefined };
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
-  const checkAllNodes = async () => {
-    if (nodes.length === 0) return;
+  const checkAllNodes = useCallback(async () => {
+    if (nodesRef.current.length === 0) return;
+    const version = ++revision.current;
+    const snapshot = nodesRef.current;
     setChecking(true);
-    setNodes((prev) => prev.map((n) => ({ ...n, status: 'checking' as const })));
-    const updated = await Promise.all(nodes.map((n) => checkNodeStatus(n)));
+    setNodes(snapshot.map((n) => ({ ...n, status: 'checking' as const })));
+    const updated = await Promise.all(snapshot.map(checkNodeStatus));
+    if (!mounted.current || version !== revision.current) return;
+    nodesRef.current = updated;
     setNodes(updated);
-    if (currentUsername) {
-      saveNodes(updated, currentUsername);
-    }
+    if (currentUsername) saveNodes(updated, currentUsername);
     setChecking(false);
-  };
+  }, [currentUsername]);
 
-  useEffect(() => { checkAllNodes(); }, []);
+  useEffect(() => {
+    mounted.current = true;
+    const reload = (event: Event) => {
+      if ((event as CustomEvent).detail?.username !== currentUsername) return;
+      revision.current++;
+      const latest = getStoredNodes(currentUsername);
+      nodesRef.current = latest;
+      setNodes(latest);
+      setChecking(false);
+    };
+    window.addEventListener('apexnav_nodes_change', reload);
+    void checkAllNodes();
+    return () => {
+      mounted.current = false;
+      window.removeEventListener('apexnav_nodes_change', reload);
+    };
+  }, [currentUsername, checkAllNodes]);
+
+  const persistNodes = (updated: MonitoredNode[]) => {
+    if (!currentUsername) return;
+    nodesRef.current = updated;
+    setNodes(updated);
+    saveNodes(updated, currentUsername);
+    void syncNodesWithD1(currentUsername, updated);
+  };
 
   const handleAddNode = (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,33 +87,22 @@ export const StatusMonitorCard: React.FC<StatusMonitorCardProps> = ({ isAdmin = 
     let formattedUrl = newNodeUrl.trim();
     if (!/^https?:\/\//i.test(formattedUrl)) formattedUrl = `https://${formattedUrl}`;
     const newNode: MonitoredNode = {
-      id: Date.now().toString(),
-      name: newNodeName.trim(),
-      url: formattedUrl,
-      status: 'checking',
+      id: crypto.randomUUID(), name: newNodeName.trim(), url: formattedUrl, status: 'checking',
     };
-    const updated = [...nodes, newNode];
-    setNodes(updated);
-    saveNodes(updated, currentUsername);
+    persistNodes([...nodesRef.current, newNode]);
+    const version = revision.current;
     setNewNodeName('');
     setNewNodeUrl('');
     setIsAddModalOpen(false);
-    checkNodeStatus(newNode).then((res) => {
-      setNodes((cur) => {
-        const next = cur.map((n) => (n.id === res.id ? res : n));
-        saveNodes(next, currentUsername);
-        return next;
-      });
+    void checkNodeStatus(newNode).then((result) => {
+      if (!mounted.current || version !== revision.current) return;
+      persistNodes(nodesRef.current.map((n) => n.id === result.id ? result : n));
     });
   };
 
   const handleDeleteNode = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = nodes.filter((n) => n.id !== id);
-    setNodes(updated);
-    if (currentUsername) {
-      saveNodes(updated, currentUsername);
-    }
+    persistNodes(nodesRef.current.filter((n) => n.id !== id));
   };
 
   const onlineCount = nodes.filter((n) => n.status === 'online').length;

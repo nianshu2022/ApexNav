@@ -2,27 +2,29 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, ArrowUpRight, Globe, Bookmark, ChevronDown } from 'lucide-react';
 import type { SearchEngine, SearchEngineKey, Site } from '../types';
 
+import { filterAndRankSites, type MatchType } from '../utils/searchMatcher';
+
 export const SEARCH_ENGINES: Record<SearchEngineKey, SearchEngine> = {
   google: {
     key: 'google',
     name: 'Google',
     icon: '🌐',
     url: 'https://www.google.com/search?q=',
-    placeholder: '搜索网页、输入关键词可直接查找已保存的书签...',
+    placeholder: '搜索网页、输入名称/拼音/网址查找已保存书签...',
   },
   bing: {
     key: 'bing',
     name: 'Bing',
     icon: '🔍',
     url: 'https://cn.bing.com/search?q=',
-    placeholder: '搜索微软 Bing 全球精选，支持查找已保存书签...',
+    placeholder: '搜索微软 Bing，支持按名称/拼音查找书签...',
   },
   baidu: {
     key: 'baidu',
     name: '百度',
     icon: '🐾',
     url: 'https://www.baidu.com/s?wd=',
-    placeholder: '百度一下，支持查找已保存书签...',
+    placeholder: '百度一下，支持按名称/拼音查找已保存书签...',
   },
   github: {
     key: 'github',
@@ -46,11 +48,9 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
   onChangeEngine,
   onSearchSubmit,
 }) => {
-
-
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [matchedSites, setMatchedSites] = useState<Site[]>([]);
+  const [matchedSites, setMatchedSites] = useState<(Site & { matchType?: MatchType; matchLabel?: string })[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [isFocused, setIsFocused] = useState(false);
   const [isEngineDropdownOpen, setIsEngineDropdownOpen] = useState(false);
@@ -69,13 +69,8 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
       return;
     }
 
-    const q = query.trim().toLowerCase();
-    const matches = sites.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.url.toLowerCase().includes(q) ||
-        (s.description && s.description.toLowerCase().includes(q))
-    ).slice(0, 5);
+    // Intelligent site matching: Name (exact, prefix, pinyin) > Alias > URL > Description
+    const matches = filterAndRankSites(sites, query, 8);
     setMatchedSites(matches);
 
     const timer = setTimeout(() => {
@@ -134,12 +129,44 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
     setIsFocused(false);
   };
 
-
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    // Tab / Shift+Tab to rotate search engines smoothly
+    if (e.key === 'Tab') {
       e.preventDefault();
-      handleSearch();
+      const engineKeys: SearchEngineKey[] = ['google', 'bing', 'baidu', 'github'];
+      const currentIdx = engineKeys.indexOf(currentEngine);
+      const nextIdx = e.shiftKey
+        ? (currentIdx - 1 + engineKeys.length) % engineKeys.length
+        : (currentIdx + 1) % engineKeys.length;
+      onChangeEngine(engineKeys[nextIdx]);
+      return;
+    }
+
+    const totalSelectable = matchedSites.length + suggestions.length;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedIndex((prev) => (totalSelectable > 0 ? (prev + 1) % totalSelectable : -1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusedIndex((prev) => (totalSelectable > 0 ? (prev - 1 + totalSelectable) % totalSelectable : -1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const openInNewTab = localStorage.getItem('apexnav_open_new_tab') !== 'false';
+      if (focusedIndex >= 0 && focusedIndex < matchedSites.length) {
+        const site = matchedSites[focusedIndex];
+        if (typeof window !== 'undefined' && (window as any).electronAPI && onSearchSubmit) {
+          onSearchSubmit(site.url);
+        } else {
+          window.open(site.url, openInNewTab ? '_blank' : '_self');
+        }
+        setIsFocused(false);
+      } else if (focusedIndex >= matchedSites.length) {
+        const sugg = suggestions[focusedIndex - matchedSites.length];
+        setQuery(sugg);
+        handleSearch(sugg);
+      } else {
+        handleSearch();
+      }
     } else if (e.key === 'Escape') {
       setIsFocused(false);
     }
@@ -167,11 +194,12 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
                 e.stopPropagation();
                 setIsEngineDropdownOpen(!isEngineDropdownOpen);
               }}
-              className="px-3 py-2 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-              title="切换搜索引擎"
+              className="px-3 py-2 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer group/engine"
+              title="切换搜索引擎 (支持按 Tab / Shift+Tab 快速轮转)"
             >
               <span>{activeEngine.icon}</span>
               <span className="hidden sm:inline">{activeEngine.name}</span>
+              <span className="hidden lg:inline text-[9px] font-mono text-slate-400 dark:text-slate-500 px-1 py-0.2 rounded bg-slate-200/60 dark:bg-slate-700/60">Tab ⇥</span>
               <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isEngineDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -254,62 +282,91 @@ export const SearchHero: React.FC<SearchHeroProps> = ({
             {/* Matched Local Bookmarks */}
             {matchedSites.length > 0 && (
               <div className="p-2 border-b border-slate-100 dark:border-slate-800">
-                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
-                  <Bookmark className="w-3 h-3" />
-                  <span>匹配已保存的书签 ({matchedSites.length})</span>
+                <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>匹配已保存的书签 ({matchedSites.length})</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">已优先按名称/拼音筛选</span>
                 </div>
-                {matchedSites.map((site) => (
-                  <a
-                    key={site.id}
-                    href={site.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setIsFocused(false)}
-                    className="px-3 py-2 rounded-xl text-sm flex items-center justify-between text-slate-800 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
-                        {site.icon ? (
-                          <img src={site.icon} alt={site.name} className="w-4 h-4 object-contain" />
-                        ) : (
-                          <span className="text-xs font-bold">{site.name.charAt(0)}</span>
-                        )}
-                      </div>
-                      <span className="font-semibold truncate">{site.name}</span>
-                      <span className="text-xs text-slate-400 truncate hidden sm:inline">{site.url}</span>
-                    </div>
-                    <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 shrink-0">
-                      直达 ↗
-                    </span>
-                  </a>
-                ))}
+                <div className="max-h-72 overflow-y-auto space-y-0.5 scrollbar-thin">
+                  {matchedSites.map((site, sIdx) => {
+                    const isSelected = sIdx === focusedIndex;
+                    return (
+                      <a
+                        key={site.id}
+                        href={site.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setIsFocused(false)}
+                        onMouseEnter={() => setFocusedIndex(sIdx)}
+                        className={`px-3 py-2 rounded-xl text-sm flex items-center justify-between transition-colors ${
+                          isSelected
+                            ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300'
+                            : 'text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            {site.icon ? (
+                              <img
+                                src={site.icon}
+                                alt={site.name}
+                                className="w-4 h-4 object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <span className="text-xs font-bold">{site.name.charAt(0)}</span>
+                            )}
+                          </div>
+                          <span className="font-semibold truncate">{site.name}</span>
+                          {site.matchLabel && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-indigo-100/70 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shrink-0 font-medium">
+                              {site.matchLabel}
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400 truncate hidden sm:inline">{site.url}</span>
+                        </div>
+                        <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 shrink-0 font-medium">
+                          直达 ↗
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
             {/* Web Search Suggestions */}
             {suggestions.length > 0 && (
               <div className="p-1">
-                {suggestions.map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => {
-                      setQuery(item);
-                      handleSearch(item);
-                    }}
-                    onMouseEnter={() => setFocusedIndex(idx)}
-                    className={`px-4 py-2.5 rounded-xl cursor-pointer text-sm flex items-center justify-between transition-colors ${
-                      idx === focusedIndex
-                        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-medium'
-                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Search className="w-4 h-4 text-slate-400 opacity-70" />
-                      <span>{item}</span>
+                {suggestions.map((item, idx) => {
+                  const globalIdx = matchedSites.length + idx;
+                  const isSelected = globalIdx === focusedIndex;
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setQuery(item);
+                        handleSearch(item);
+                      }}
+                      onMouseEnter={() => setFocusedIndex(globalIdx)}
+                      className={`px-4 py-2.5 rounded-xl cursor-pointer text-sm flex items-center justify-between transition-colors ${
+                        isSelected
+                          ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-medium'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Search className="w-4 h-4 text-slate-400 opacity-70" />
+                        <span>{item}</span>
+                      </div>
+                      <Globe className="w-4 h-4 text-slate-400 opacity-40" />
                     </div>
-                    <Globe className="w-4 h-4 text-slate-400 opacity-40" />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

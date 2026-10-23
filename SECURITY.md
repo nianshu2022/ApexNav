@@ -1,101 +1,35 @@
-# ApexNav 安全规范与零信任架构指南 (Security Specifications)
+# ApexNav 认证与数据访问
 
-本文档旨在阐明 **ApexNav** 项目的安全架构、身份认证模型、访问控制策略与安全最佳实践。ApexNav 专为开源部署与长期维护设计，遵循零信任（Zero-Trust）与服务端密钥托管原则。
+## 登录与会话
 
----
+登录通过 Cloudflare 环境变量或 D1 的账号密码哈希进行验证。前端发送 SHA-256 密码哈希，服务端签发带有效期、账号与服务地址的 HMAC 会话凭证，有效期为 30 天。后续请求使用 `Authorization: Bearer <token>`。
 
-## 🛡️ 安全架构概览 (Security Architecture)
+- `GET/POST /api/data` 和 `POST /api/auth/change-password` 必须通过会话验证。
+- 服务端从已验证的会话确定账号；请求中的 `username` 如与会话账号不符，返回 403。
+- 缺少、篡改或过期的凭证返回 401。未知路由返回 404，不再进入通用数据写入逻辑。
+- 会话签名使用当前服务端账号凭据派生的密钥；修改密码后旧凭证失效。退出登录清除当前浏览器的凭证，并同步到同源其他标签页；不撤销其他设备上尚未过期的凭证。
+- 登录、注册或修改密码被服务端拒绝时，不再降级为本地密码校验成功。
 
-ApexNav 采用 **Cloudflare Pages 边缘节点 + Cloudflare D1 (Serverless SQLite) + 客户端加密** 的轻量级高安全架构。
+SHA-256 哈希不是传输加密，当前登录协议中的哈希也属于敏感凭据。必须通过 HTTPS 使用服务，避免日志记录密码哈希或会话凭证。现有 D1 密码格式仍为 SHA-256，尚未迁移到带盐的慢速密码哈希。
 
-```mermaid
-flowchart TD
-    subgraph Client ["客户端 (Web Page)"]
-        Guest["未登录访客 (Guest)"]
-        Admin["管理员 (Admin)"]
-        Crypto["SHA-256 密码哈希引擎"]
-    end
+## 部署模式
 
-    subgraph Edge ["Cloudflare 边缘节点 (Pages Function)"]
-        SecretAuth{"Cloudflare Secrets 校验"}
-        APIAuth{"D1 密文比对"}
-        EnvSecret["ADMIN_USERNAME & ADMIN_PASSWORD (加密密钥)"]
-    end
+- **固定管理员**：配置 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 或 `ADMIN_PASSWORD_HASH`。若两种密码配置同时存在，以 `ADMIN_PASSWORD_HASH` 为准。此模式禁止注册和网页内修改密码；请在 Cloudflare 环境变量中修改。
+- **D1 多账号**：绑定 `DB` 且未启用固定管理员时，可注册账号。注册采用事务，失败不会清空已有导航数据。
+- **未绑定 D1**：固定管理员仍可登录并使用本地缓存；云同步返回 503，不显示虚假的上传成功。
 
-    subgraph Database ["存储层"]
-        D1[("Cloudflare D1 (SQLite)")]
-        LocalStore["LocalStorage (账号隔离)"]
-    end
+数据库查询使用参数绑定。导航数据按账号保存；分类/网址与监控节点分别更新，省略的字段保持原值，显式传入空数组才清空对应字段。
 
-    Guest -->|只读浏览| LocalStore
-    Admin -->|输入密码| Crypto
-    Crypto -->|发送密文| SecretAuth
-    EnvSecret --> SecretAuth
-    SecretAuth -->|校验通过| D1
-    SecretAuth -->|校验失败| Reject["401 / 403 拒绝访问"]
-```
+## 升级与本地缓存
 
----
+前后端需要一起发布。旧版 `apexnav_is_admin` 登录标记不再被接受，升级后需重新登录；原有按账号保存的本地分类、网址与节点缓存不会因退出登录而删除。
 
-## 🔑 身份认证与权限控制矩阵 (Access Control Matrix)
+登录或拉取时，已有云端记录（包括空数组）为当前同步结果；云端尚无账号记录时保留本地缓存，供首次上传。退出或切换账号会重建页面状态，旧请求不会更新新账号的页面或缓存。更换 API 地址需重新登录，避免向另一个服务发送旧凭证。
 
-ApexNav 划分了严格的两种运行权限模式：
+## 本地验证
 
-| 功能维度 | 访客模式 (Guest Mode) | 管理员模式 (Admin Mode) |
-| :--- | :--- | :--- |
-| **身份认证** | 无需认证 | Cloudflare Secrets / D1 密文校验 |
-| **网址与分类查看** | 只读 (默认预设网址) | 读取专属账号下的全量分类与网址 |
-| **增删改分类/网址** | ❌ 彻底禁用 | ✅ 允许并自动同步至 D1 |
-| **节点监控管理** | ❌ 只能查看在线率 | ✅ 可添加/编辑/删除监控节点 |
-| **D1 数据库写权限** | ❌ 后端接口 401/403 拒绝 | ✅ 允许 `POST /api/data` 写入 |
-| **公网账号注册** | ❌ 已启用 Secrets 时禁止注册 | ❌ 不开放自由注册 |
+`npm test` 使用内存 SQLite 和模拟网络验证接口、缓存同步与 React 账号切换，不连接线上 D1。`npm run build` 同时检查前端和 Pages Functions 类型并构建前端。生产环境的绑定、Secrets、跨域和实际登录仍需部署后验证。
 
----
+## 漏洞报告
 
-## 🔒 核心安全机制 (Core Security Features)
-
-### 1. Cloudflare Secrets 服务端密钥托管 (推荐)
-- 将管理员账号与密码直接托管在 Cloudflare 控制台的 **Environment Variables & Secrets** 中 (`ADMIN_USERNAME` 与 `ADMIN_PASSWORD`)。
-- **安全优势**：
-  - 前端 JavaScript 代码中**不包含任何明文密码或管理员用户名**。
-  - 公网随意注册功能被服务端自动关闭 (`403 Forbidden`)。
-  - 密码校验 100% 在 Cloudflare 云端边缘节点进行，防篡改、防拖库。
-
-### 2. 客户端零信任 SHA-256 密文传输
-- 用户在登录弹窗中输入密码后，客户端通过 Web Crypto API (`crypto.subtle.digest('SHA-256', ...)` ) 将密码转换为不可逆的 256 位哈希值。
-- 网络传输中绝不发送明文密码，防中间人窃听（MITM）。
-
-### 3. SQL 注入防护 (Prepared Statements)
-- 后端 Cloudflare Function (`functions/api/[[path]].ts`) 所有的 D1 数据库操作**严格使用参数化绑定 (Prepared Statements)**：
-  ```typescript
-  await env.DB.prepare('SELECT * FROM user_nav_data WHERE username = ?')
-    .bind(cleanUn)
-    .first();
-  ```
-- 彻底杜绝 SQL 注入漏洞。
-
-### 4. 账号级隔离与数据安全
-- D1 数据库以 `username` 作为主键/用户标识，多用户数据相互隔离。
-- 本地 `localStorage` 采用 `apexnav_categories_{username}` 账号命名空间隔离，防止本地多账号数据混淆。
-
----
-
-## 🛠️ 安全部署指南 (Security Deployment Checklist)
-
-在将 ApexNav 部署到生产环境时，建议完成以下安全配置：
-
-- [ ] **开启 Cloudflare Pages 环境变量密钥**：
-  在 Cloudflare Pages 项目设置中添加 `ADMIN_USERNAME` 与 `ADMIN_PASSWORD`（设置为 Secret 加密变量）。
-- [ ] **启用 HTTPS 强制重定向**：
-  在 Cloudflare 域名设置中开启 *Always Use HTTPS* 与 *HSTS*。
-- [ ] **定期备份数据**：
-  在设置面板中定期使用 **“导出 JSON 备份文件”** 保存本地份。
-
----
-
-## 📩 漏洞报告与响应 (Reporting a Vulnerability)
-
-如果您在 ApexNav 中发现了安全漏洞，请勿直接公开提 Issue。请通过以下方式提交私密报告：
-
-- **Email**: `2478951652@qq.com`
-- 我们将在 48 小时内确认报告并进行安全修复与更新。
+如发现安全问题，请私下联系：2478951652@qq.com。

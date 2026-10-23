@@ -58,16 +58,16 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // ── D → toggle dark mode ────────────────────────────────────────────
-      if (e.key === 'd' || e.key === 'D') {
+      // ── Alt+D → toggle dark mode (prevent accidental bare-key misfires) ──
+      if (e.altKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault();
         onToggleDarkMode();
         return;
       }
 
-      // ── 1–9 → jump to Nth category ──────────────────────────────────────
+      // ── Alt+1..9 → jump to Nth category (safe browser-style tab jumping) ──
       const num = parseInt(e.key, 10);
-      if (!isNaN(num) && num >= 1 && num <= 9 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!isNaN(num) && num >= 1 && num <= 9 && e.altKey && !e.ctrlKey && !e.metaKey) {
         const target = categories[num - 1];
         if (target) {
           e.preventDefault();

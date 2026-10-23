@@ -51,10 +51,15 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
 
       setLoading(true);
       setError('');
-      await setupAccount(username.trim(), password);
-      setLoading(false);
-      onSuccess();
-      onClose();
+      try {
+        await setupAccount(username.trim(), password);
+        onSuccess();
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '注册失败，请重试');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 

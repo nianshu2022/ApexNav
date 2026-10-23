@@ -117,21 +117,23 @@ function AppInner() {
 
   // Sync D1 data on user change
   useEffect(() => {
-    fetchUserD1Data(currentUsername || "").then((remote) => {
-      if (remote) {
+    const controller = new AbortController();
+    fetchUserD1Data(currentUsername, controller.signal).then((remote) => {
+      if (remote && !controller.signal.aborted) {
         setCategories(remote.categories);
         setSites(remote.sites);
       }
     });
+    return () => controller.abort();
   }, [currentUsername]);
 
-  const handleImportData = (importedCats: Category[], importedSites: Site[]) => {
+  const handleImportData = (importedCats: Category[], importedSites: Site[], syncCloud = true) => {
     if (!currentUsername) return;
     setCategories(importedCats);
     setSites(importedSites);
     saveCategories(importedCats, currentUsername);
     saveSites(importedSites, currentUsername);
-    syncUserWithD1(currentUsername, importedCats, importedSites);
+    if (syncCloud) syncUserWithD1(currentUsername, importedCats, importedSites);
   };
 
   const handleResetDefault = () => {
@@ -212,8 +214,6 @@ function AppInner() {
   useKeyboardShortcuts({
     onOpenCommandBar: () => setIsCommandBarOpen(true),
     onToggleDarkMode: () => setDarkMode(!darkMode),
-    onToggleWidgets: handleToggleWidgets,
-    onOpenSettings: () => setIsSettingsOpen(true),
     categories,
   });
 
@@ -253,7 +253,7 @@ function AppInner() {
           onToggleDarkMode={() => setDarkMode(!darkMode)}
           onOpenWidgets={() => setIsWidgetHubOpen(true)}
           onToggleBingBg={handleToggleBingBg}
-          onChangeWallpaper={handleChangeWallpaper}
+          onChangeWallpaper={() => handleChangeWallpaper((wallpaperIdx + 1) % APPLE_MACOS_WALLPAPERS.length)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onLoginRequest={() => setIsPinModalOpen(true)}
           onOpenCommandBar={() => setIsCommandBarOpen(true)}
@@ -359,10 +359,16 @@ function AppInner() {
   );
 }
 
+function AccountWorkspace() {
+  const { currentUsername } = useAuth();
+  // Recreate all account-owned UI immediately, including search results, dialogs and node checks.
+  return <AppInner key={currentUsername ? `user:${currentUsername}` : 'guest'} />;
+}
+
 export function App() {
   return (
     <AuthProvider>
-      <AppInner />
+      <AccountWorkspace />
     </AuthProvider>
   );
 }

@@ -47,13 +47,13 @@ sequenceDiagram
 
     Admin->>UI: 1. 新增/修改/删除网址或分类
     UI->>Store: 2. 写入本地 LocalStorage (秒级响应)
-    UI->>Edge: 3. 发起 POST /api/data (携带 username 与 JSON)
-    Edge->>D1: 4. 执行 SELECT -> UPDATE / INSERT 写入 DB
+    UI->>Edge: 3. 发起 POST /api/data (携带 Bearer 会话凭证与 JSON)
+    Edge->>D1: 4. 验证会话并执行 UPSERT 写入 DB
     D1-->>Edge: 5. 写入成功确认
     Edge-->>UI: 6. 返回 { success: true }
 
-    Note over Admin, D1: 切换设备 / 切屏时拉取数据
-    Admin->>UI: 7. 打开新设备 / 页面 focus 聚焦
+    Note over Admin, D1: 切登录账号 / 手动拉取数据
+    Admin->>UI: 7. 登录账号 / 手动拉取
     UI->>Edge: 8. 发起 GET /api/data?username=xxx
     Edge->>D1: 9. 查询 user_nav_data 表记录
     D1-->>Edge: 10. 返回最新的 categories 与 sites
@@ -72,7 +72,7 @@ sequenceDiagram
 - 👥 **多账号隔离 & 访客演示模式**：
   - **访客模式**：未登录时永远展示通用的演示网址与节点，只读防误触，任何修改不会污染公开视图。
   - **多账号独立存储**：数据严格按照 `username` 进行用户隔离与权限校验。
-- 🌐 **Cloudflare D1 跨设备云同步**：支持手机、电脑、公司机器跨设备实时同步书签与节点，任何终端修改自动云端同步。
+- 🌐 **Cloudflare D1 跨设备云同步**：支持手机、电脑、公司机器跨设备同步书签与节点，任何终端修改自动云端同步。
 - 🛡️ **Cloudflare Secrets 边缘密钥托管**：管理员账号密码可直接部署在 Cloudflare 云端环境变量秘钥中，前端零密码露出的零信任架构（详见 [SECURITY.md](SECURITY.md)）。
 - 🍱 **Bento 小组件矩阵**：
   - 🌤️ **实时天气卡片**：自动定位 / 搜索切换城市、未来 3 天预报、24 小时气温趋势与空气指标。

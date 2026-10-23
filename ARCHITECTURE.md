@@ -2,6 +2,10 @@
 
 本文档旨在详述 **ApexNav** 的整体软件架构设计、组件职责划分、数据持久化机制与跨设备数据同步链路。
 
+当前同步实现：界面先保存账号本地缓存，同一页面内的上传按顺序发送；分类和网址一起更新，节点独立更新。后端以单条 UPSERT 保留请求中未提供的字段。登录及手动拉取读取云端数据，没有轮询或服务端推送。正在退出、切换账号或被新编辑超越的读取结果会被丢弃。此机制不提供跨设备同时编辑的合并或冲突解决。
+
+API 使用服务端签发的 Bearer 会话验证账号，升级要求与凭证说明见 [SECURITY.md](SECURITY.md)。
+
 ---
 
 ## 🏗️ 系统架构图 (Architecture Diagram)
@@ -52,13 +56,13 @@ sequenceDiagram
 
     Admin->>UI: 1. 新增/修改/删除网址或分类
     UI->>Store: 2. 写入本地 LocalStorage (秒级响应)
-    UI->>Edge: 3. 发起 POST /api/data (携带 username 与 JSON)
-    Edge->>D1: 4. 执行 SELECT -> UPDATE / INSERT 写入 DB
+    UI->>Edge: 3. 发起 POST /api/data (携带 Bearer 会话凭证与 JSON)
+    Edge->>D1: 4. 验证会话并执行 UPSERT 写入 DB
     D1-->>Edge: 5. 写入成功
     Edge-->>UI: 6. 返回 { success: true } 确认
 
-    Note over Admin, D1: 换设备 / 切屏时拉取数据
-    Admin->>UI: 7. 打开新设备 / 页面 focus 聚焦
+    Note over Admin, D1: 登录账号 / 手动拉取数据
+    Admin->>UI: 7. 登录账号 / 手动拉取
     UI->>Edge: 8. 发起 GET /api/data?username=xxx
     Edge->>D1: 9. 查询 user_nav_data 表记录
     D1-->>Edge: 10. 返回最新的 categories 与 sites

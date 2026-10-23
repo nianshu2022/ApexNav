@@ -8,7 +8,16 @@ import {
 } from 'lucide-react';
 import type { Category, Site } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { syncUserWithD1, fetchUserD1Data } from '../utils/storage';
+import { syncUserWithD1, fetchUserD1Data, getApiBaseUrl, saveApiBaseUrl } from '../utils/storage';
+import { matchSite } from '../utils/searchMatcher';
+import {
+  parseBookmarkFileContent,
+  mergeBookmarks,
+  generateNetscapeBookmarksHtml,
+  type ParsedBookmarkResult,
+} from '../utils/bookmarkParser';
+import { fetchSiteMetadata } from '../utils/siteParser';
+
 
 
 interface SettingsModalProps {
@@ -16,7 +25,7 @@ interface SettingsModalProps {
   onClose: () => void;
   categories: Category[];
   sites: Site[];
-  onImportData: (categories: Category[], sites: Site[]) => void;
+  onImportData: (categories: Category[], sites: Site[], syncCloud?: boolean) => void;
   onResetDefault: () => void;
   onAddSite: (site: Omit<Site, 'id'>) => void;
   onEditSite: (site: Site) => void;
@@ -141,10 +150,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Search & Filter state for site management
   const [selectedCatId, setSelectedCatId] = useState<string>('all');
   const [searchFilter, setSearchFilter] = useState('');
+  const [apiBaseUrlInput, setApiBaseUrlInput] = useState<string>(() => getApiBaseUrl());
+
 
   // Inline Site Add/Edit state
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [isSiteFormOpen, setIsSiteFormOpen] = useState(false);
+  const [isAiParsingSite, setIsAiParsingSite] = useState(false);
   const [siteForm, setSiteForm] = useState({
     name: '',
     url: '',
@@ -174,6 +186,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     title: '',
     message: '',
     onConfirm: () => {},
+  });
+
+  // Import Preview Modal State
+  const [importPreview, setImportPreview] = useState<{
+    isOpen: boolean;
+    fileName: string;
+    fileType: 'html' | 'json';
+    result: ParsedBookmarkResult | null;
+    mode: 'append' | 'replace';
+  }>({
+    isOpen: false,
+    fileName: '',
+    fileType: 'html',
+    result: null,
+    mode: 'append',
+  });
+
+  const [openInNewTabPref, setOpenInNewTabPref] = useState<boolean>(() => {
+    return localStorage.getItem('apexnav_open_new_tab') !== 'false';
   });
 
   const { logout, changeCredentials, currentUsername, isEnvAuth } = useAuth();
@@ -325,7 +356,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     showMsg('数据已成功导出 JSON 备份文件！', 'success');
   };
 
-  // Import JSON
+  // Export standard browser HTML bookmarks (Netscape Bookmark format)
+  const handleExportHTML = () => {
+    try {
+      const html = generateNetscapeBookmarksHtml(categories, sites);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ApexNav-bookmarks-${new Date().toISOString().slice(0, 10)}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showMsg('已成功导出为 Chrome / Edge / Safari 标准 HTML 书签文件！', 'success');
+    } catch {
+      showMsg('导出 HTML 书签失败，请重试。', 'error');
+    }
+  };
+
+  // Import file (HTML or JSON)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -333,42 +381,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const json = JSON.parse(event.target?.result as string);
-        if (Array.isArray(json)) {
-          const importedCategories: Category[] = [];
-          const importedSites: Site[] = [];
-          json.forEach((catItem: any) => {
-            if (catItem.id && catItem.name) {
-              importedCategories.push({ id: catItem.id, name: catItem.name, icon: catItem.icon || '📁' });
-              if (Array.isArray(catItem.sites)) {
-                catItem.sites.forEach((siteItem: any) => {
-                  if (siteItem.name && siteItem.url) {
-                    importedSites.push({
-                      id: siteItem.id || `site_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                      category_id: catItem.id,
-                      name: siteItem.name,
-                      url: siteItem.url,
-                      icon: siteItem.icon || '',
-                      description: siteItem.description || '',
-                    });
-                  }
-                });
-              }
-            }
-          });
-          onImportData(importedCategories, importedSites);
-          showMsg(`导入成功！加载了 ${importedCategories.length} 个分类，${importedSites.length} 个网址。`, 'success');
-        } else if (json.categories && json.sites) {
-          onImportData(json.categories, json.sites);
-          showMsg(`导入成功！加载了 ${json.categories.length} 个分类，${json.sites.length} 个网址。`, 'success');
-        } else {
-          showMsg('无法识别 JSON 文件格式。', 'error');
+        const text = event.target?.result as string;
+        const parsed = parseBookmarkFileContent(text, file.name);
+
+        if (parsed.stats.totalSites === 0) {
+          showMsg('未在该文件中解析到任何有效书签，请检查文件格式。', 'error');
+          return;
         }
-      } catch {
-        showMsg('JSON 文件解析失败，请检查文件内容。', 'error');
+
+        const isHtml =
+          file.name.toLowerCase().endsWith('.html') ||
+          file.name.toLowerCase().endsWith('.htm') ||
+          text.includes('<DL>') ||
+          text.includes('<dl>');
+
+        setImportPreview({
+          isOpen: true,
+          fileName: file.name,
+          fileType: isHtml ? 'html' : 'json',
+          result: parsed,
+          mode: 'append',
+        });
+      } catch (err: any) {
+        showMsg(err.message || '文件解析失败，请检查文件格式。', 'error');
+      } finally {
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     };
     reader.readAsText(file);
+  };
+
+  // Confirm import action from preview dialog
+  const handleConfirmImport = () => {
+    if (!importPreview.result) return;
+    const { categories: newCats, sites: newSites, stats } = importPreview.result;
+
+    if (importPreview.mode === 'append') {
+      const merged = mergeBookmarks(categories, sites, newCats, newSites);
+      onImportData(merged.categories, merged.sites);
+      showMsg(`✅ 成功合并导入 ${stats.totalSites} 个书签！现有 ${merged.categories.length} 个分类，${merged.sites.length} 个网址。`, 'success');
+    } else {
+      onImportData(newCats, newSites);
+      showMsg(`✅ 全新导入成功！已加载 ${stats.totalCategories} 个分类，${stats.totalSites} 个网址。`, 'success');
+    }
+
+    setImportPreview((prev) => ({ ...prev, isOpen: false }));
   };
 
   // Change credentials
@@ -397,15 +456,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Filtered sites
-  const filteredSites = sites.filter((site) => {
-    const matchesCat = selectedCatId === 'all' || site.category_id === selectedCatId;
-    const matchesSearch =
-      !searchFilter.trim() ||
-      site.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      site.url.toLowerCase().includes(searchFilter.toLowerCase());
-    return matchesCat && matchesSearch;
-  });
+  // Filtered sites (intelligently matches Name, Pinyin, and URL with Name priority)
+  const filteredSites = sites
+    .map((site) => ({
+      site,
+      catMatch: selectedCatId === 'all' || site.category_id === selectedCatId,
+      searchRes: searchFilter.trim() ? matchSite(site, searchFilter) : { matched: true, score: 0 },
+    }))
+    .filter((item) => item.catMatch && item.searchRes.matched)
+    .sort((a, b) => (b.searchRes.score || 0) - (a.searchRes.score || 0))
+    .map((item) => item.site);
 
   const sidebarNav: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { key: 'sites', label: '网址管理', icon: <Globe className="w-4 h-4" />, badge: sites.length },
@@ -557,7 +617,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="text"
                         value={searchFilter}
                         onChange={(e) => setSearchFilter(e.target.value)}
-                        placeholder="搜索网址或关键词..."
+                        placeholder="搜索书签（按名称、拼音或网址）..."
                         className="w-full pl-8 pr-3 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
@@ -620,32 +680,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400">网站 URL 地址 *</label>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!siteForm.url.trim()) return;
-                              let urlStr = siteForm.url.trim();
-                              if (!/^https?:\/\//i.test(urlStr)) {
-                                urlStr = `https://${urlStr}`;
+                            disabled={isAiParsingSite}
+                            onClick={async () => {
+                              if (!siteForm.url.trim()) {
+                                showMsg('请先填写网址 URL 地址', 'error');
+                                return;
                               }
+                              setIsAiParsingSite(true);
                               try {
-                                const parsedUrl = new URL(urlStr);
-                                const domain = parsedUrl.hostname;
-                                const hdIcon = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
-                                const derivedName = siteForm.name.trim() || domain.replace(/^www\./, '').split('.')[0].toUpperCase();
-                                setSiteForm({
-                                  ...siteForm,
-                                  url: urlStr,
-                                  name: siteForm.name.trim() || derivedName,
-                                  icon: hdIcon,
-                                });
-                                showMsg('✨ AI 智能抓取网站 Favicon 与信息成功！', 'success');
-                              } catch {
-                                showMsg('请填写有效的 URL 网址格式', 'error');
+                                const meta = await fetchSiteMetadata(siteForm.url);
+                                setSiteForm((prev) => ({
+                                  ...prev,
+                                  url: prev.url.startsWith('http') ? prev.url : `https://${prev.url.trim()}`,
+                                  name: prev.name.trim() || meta.name,
+                                  icon: meta.icon,
+                                  description: prev.description.trim() || meta.description,
+                                }));
+                                showMsg('✨ AI 智能抓取网站信息成功！', 'success');
+                              } catch (err: any) {
+                                showMsg(err.message || '抓取失败，请检查网址格式', 'error');
+                              } finally {
+                                setIsAiParsingSite(false);
                               }
                             }}
-                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
                           >
-                            <Sparkles className="w-3 h-3" />
-                            AI 智能识别
+                            <Sparkles className={`w-3 h-3 ${isAiParsingSite ? 'animate-spin' : ''}`} />
+                            {isAiParsingSite ? '解析中...' : 'AI 智能识别'}
                           </button>
                         </div>
                         <input
@@ -949,6 +1010,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* ── TAB 3: 云端与数据 (Cloud Sync & Backup) ── */}
             {activeTab === 'cloud' && (
               <div className="space-y-5">
+                {/* Extension & Remote Endpoint Configuration Card */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-indigo-500" />
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        Chrome/Edge 扩展 远程 Cloudflare 服务器域名绑定
+                      </h4>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold">
+                      扩展/跨域必填
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    在 Chrome/Edge 离线扩展中，请填写你在 Cloudflare Pages / Workers 部署的后端地址（如 <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded text-indigo-600 dark:text-indigo-400">https://apexnav.pages.dev</code>），即可打通远端 D1 数据库秒级全量同步！
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="url"
+                      value={apiBaseUrlInput}
+                      onChange={(e) => setApiBaseUrlInput(e.target.value)}
+                      placeholder="https://your-apexnav-domain.pages.dev"
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      onClick={() => {
+                        saveApiBaseUrl(apiBaseUrlInput);
+                        showMsg('✅ 已保存远程 Cloudflare API 服务器域名！', 'success');
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                    >
+                      保存设置
+                    </button>
+                  </div>
+                </div>
+
                 {/* Cloud Connection Status Card */}
                 <div className="p-5 rounded-3xl bg-gradient-to-br from-indigo-900 to-slate-900 text-white border border-indigo-800 shadow-xl relative overflow-hidden">
                   <div className="absolute right-0 top-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -957,8 +1054,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <h4 className="text-sm font-bold text-white">Cloudflare D1 无服务器数据库绑定状态</h4>
                   </div>
                   <p className="text-xs text-indigo-200 leading-relaxed">
-                    已打通 Cloudflare D1 边缘数据库。多设备间可随时进行同步全量覆盖与拉取。
+                    配置并登录 Cloudflare 后端后，可上传或拉取分类与网址。操作结果会显示同步是否成功。
                   </p>
+
                   {currentUsername && (
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
@@ -982,7 +1080,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           showMsg('正在从 Cloudflare D1 拉取最新云端数据...', 'success');
                           const cloudData = await fetchUserD1Data(currentUsername);
                           if (cloudData && Array.isArray(cloudData.categories)) {
-                            onImportData(cloudData.categories, cloudData.sites || []);
+                            onImportData(cloudData.categories, cloudData.sites || [], false);
                             showMsg(`✅ 拉取成功！加载了云端 ${cloudData.categories.length} 个分类，${(cloudData.sites || []).length} 个网址。`, 'success');
                           } else {
                             showMsg('ℹ️ 未检测到云端有更新数据或数据库尚无记录。', 'error');
@@ -997,28 +1095,91 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
-                {/* Local JSON Export & Import Card */}
+                {/* Bookmark Migration, Backup & Restore Card */}
                 <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">JSON 文件备份与恢复</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    将你的所有分类和网址导出为本地 `.json` 备份文件，随时可以在其他网站或客户端中导入复原。
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Database className="w-4 h-4 text-indigo-500" />
+                      书签数据迁移、备份与导入
+                    </h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold">
+                      支持 HTML / JSON
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    支持一键导入 Chrome、Edge、Safari、Firefox、Arc 等浏览器导出的标准 HTML 书签文件，或 ApexNav JSON 备份；导入时支持智能合并追加或全新替换。
                   </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-indigo-600/25 transition-all cursor-pointer hover:scale-[1.02]"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      导入书签 (HTML / JSON)
+                    </button>
+                    <button
+                      onClick={handleExportHTML}
+                      className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                      title="导出为标准浏览器书签文件，可直接导入回 Chrome/Edge/Safari/Firefox"
+                    >
+                      <Download className="w-3.5 h-3.5 text-indigo-500" />
+                      导出 HTML 书签文件
+                    </button>
                     <button
                       onClick={handleExportJSON}
                       className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                      title="导出包含所有配置的 ApexNav 结构化数据"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      导出 JSON 备份文件
+                      <Download className="w-3.5 h-3.5 text-slate-400" />
+                      导出 JSON 备份
                     </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".html,.htm,.json"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                {/* Browsing & Link Opening Preference Card */}
+                <div className="p-5 rounded-3xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <ExternalLink className="w-4 h-4 text-indigo-500" />
+                        网址打开方式偏好
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        自定义点击书签或搜索跳转时，是在全新标签页还是在当前标签页打开
+                      </p>
+                    </div>
                     <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        const current = localStorage.getItem('apexnav_open_new_tab') !== 'false';
+                        const next = !current;
+                        localStorage.setItem('apexnav_open_new_tab', String(next));
+                        setOpenInNewTabPref(next);
+                        showMsg(next ? '已开启：在新标签页中打开网址' : '已设置为：在当前标签页中打开网址', 'success');
+                      }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        openInNewTabPref ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
+                      }`}
                     >
-                      <Upload className="w-3.5 h-3.5" />
-                      导入 JSON 备份文件
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                          openInNewTabPref ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
                     </button>
-                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} className="hidden" />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                    <span>当前状态：</span>
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                      {openInNewTabPref ? '在新标签页打开 (推荐)' : '在当前标签页打开'}
+                    </span>
                   </div>
                 </div>
 
@@ -1253,6 +1414,165 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </main>
       </div>
+
+      {/* Import Preview Modal (Vision Pro Glassmorphism Card) */}
+      {importPreview.isOpen && importPreview.result && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 z-[110] animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg shadow-xs">
+                  {importPreview.fileType === 'html' ? '🌐' : '📦'}
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    导入书签预览
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-mono font-bold">
+                      {importPreview.fileType === 'html' ? 'HTML 浏览器书签' : 'JSON 备份'}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-xs" title={importPreview.fileName}>
+                    文件: {importPreview.fileName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setImportPreview((prev) => ({ ...prev, isOpen: false }))}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Stats Summary Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">检测到分类</div>
+                  <div className="text-lg font-bold font-mono text-slate-800 dark:text-slate-100">
+                    {importPreview.result.stats.totalCategories} <span className="text-xs font-normal text-slate-400">个</span>
+                  </div>
+                </div>
+                <div className="text-2xl opacity-60">📁</div>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">有效书签网址</div>
+                  <div className="text-lg font-bold font-mono text-indigo-600 dark:text-indigo-400">
+                    {importPreview.result.stats.totalSites} <span className="text-xs font-normal text-slate-400">个</span>
+                  </div>
+                </div>
+                <div className="text-2xl opacity-60">🔖</div>
+              </div>
+            </div>
+
+            {/* Category breakdown preview */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                <span>分类树与分布预览</span>
+                <span className="text-[11px] text-slate-400 font-mono">共 {importPreview.result.categories.length} 个分类</span>
+              </div>
+              <div className="max-h-36 overflow-y-auto p-2.5 rounded-2xl bg-slate-100/70 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/50 flex flex-wrap gap-1.5 custom-scrollbar">
+                {importPreview.result.categories.map((cat) => {
+                  const count = importPreview.result!.sites.filter((s) => s.category_id === cat.id).length;
+                  return (
+                    <span
+                      key={cat.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-700/80 border border-slate-200/60 dark:border-slate-600/50 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-2xs"
+                    >
+                      <span>{cat.icon || '📁'}</span>
+                      <span>{cat.name}</span>
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                        {count}
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Import Mode Radio */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                请选择导入方式：
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setImportPreview((prev) => ({ ...prev, mode: 'append' }))}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                    importPreview.mode === 'append'
+                      ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <span className="text-emerald-500">➕</span>
+                      追加合并
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
+                      推荐
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                    保留现有书签，同名分类智能合并，自动忽略已存在的重复网址。
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setImportPreview((prev) => ({ ...prev, mode: 'replace' }))}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                    importPreview.mode === 'replace'
+                      ? 'bg-rose-50/70 dark:bg-rose-950/40 border-rose-500 ring-2 ring-rose-500/20 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <span className="text-rose-500">🔄</span>
+                      全新覆盖
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 font-bold">
+                      覆盖
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                    清空现有所有数据，仅使用导入的书签结构（操作前建议先备份）。
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setImportPreview((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmImport}
+                className={`px-5 py-2.5 rounded-2xl text-xs font-bold text-white shadow-md transition-all cursor-pointer flex items-center gap-2 hover:scale-[1.02] ${
+                  importPreview.mode === 'append'
+                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/30'
+                    : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'
+                }`}
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  确认{importPreview.mode === 'append' ? '合并追加' : '覆盖导入'} ({importPreview.result.stats.totalSites} 个书签)
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom Confirm Modal */}
       {confirmModal.isOpen && (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Globe, ExternalLink, X, Command, Hash, ArrowRight } from 'lucide-react';
 import type { Category, Site, SearchEngineKey } from '../types';
+import { filterAndRankSites } from '../utils/searchMatcher';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -162,19 +163,30 @@ export const CommandBar: React.FC<CommandBarProps> = ({
       ];
     }
 
-    // With query: fuzzy filter everything, rank sites & categories first
-    const matchedSites = siteResults.filter(
-      (r) =>
-        r.label.toLowerCase().includes(q) ||
-        (r.sublabel && r.sublabel.toLowerCase().includes(q))
-    );
+    // With query: intelligent rank sites (name > pinyin > url) & categories & actions
+    const rankedSites = filterAndRankSites(sites, q, 12);
+    const matchedSites: CommandResult[] = rankedSites.map((site) => ({
+      id: `site-${site.id}`,
+      type: 'site' as ResultType,
+      label: site.name,
+      sublabel: `${site.matchLabel ? `[${site.matchLabel}] ` : ''}${site.url}`,
+      icon: site.icon,
+      action: () => {
+        if (onSiteClick) {
+          onSiteClick(site);
+        } else {
+          window.open(site.url, '_blank', 'noopener,noreferrer');
+        }
+        onClose();
+      },
+    }));
     const matchedCats = categoryResults.filter((r) => r.label.toLowerCase().includes(q));
     const matchedActions = systemActions.filter(
       (r) => r.label.toLowerCase().includes(q) || (r.sublabel && r.sublabel.toLowerCase().includes(q))
     );
 
     return [...matchedSites, ...matchedCats, ...matchedActions];
-  }, [query, sites, categories, darkMode, showWidgets, onToggleDarkMode, onToggleWidgets, onOpenSettings, onChangeEngine, onClose]);
+  }, [query, sites, categories, darkMode, showWidgets, onToggleDarkMode, onToggleWidgets, onOpenSettings, onChangeEngine, onClose, onSiteClick]);
 
   const results = buildResults();
 

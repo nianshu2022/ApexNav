@@ -1,11 +1,7 @@
 // Cloudflare Pages Function API for ApexNav Backend & Authentication
 
-interface Env {
-  DB?: any;
-  ADMIN_USERNAME?: string;
-  ADMIN_PASSWORD?: string;
-  ADMIN_PASSWORD_HASH?: string;
-}
+import { authenticate, createSession, getCredentialHash, hasEnvAuth, hashPassword, normalizeUsername } from '../_shared/auth';
+import type { AuthEnv as Env } from '../_shared/auth';
 
 export const onRequest: any = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
@@ -14,6 +10,7 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
 
   const headers = {
     'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -24,9 +21,14 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
   }
 
   // Check if Cloudflare Environment Variable Secrets are configured
-  const hasEnvSecrets = Boolean(
-    env.ADMIN_USERNAME && (env.ADMIN_PASSWORD || env.ADMIN_PASSWORD_HASH)
-  );
+  const hasEnvSecrets = hasEnvAuth(env);
+  const reply = (data: unknown, status = 200) => new Response(JSON.stringify(data), { headers, status });
+  const routes: Record<string, string[]> = {
+    '/api/auth/mode': ['GET'], '/api/auth/login': ['POST'], '/api/auth/register': ['POST'],
+    '/api/auth/change-password': ['POST'], '/api/ai/parse': ['POST'], '/api/data': ['GET', 'POST'],
+  };
+  if (!routes[path]) return reply({ success: false, message: 'Not found' }, 404);
+  if (!routes[path].includes(request.method)) return reply({ success: false, message: 'Method not allowed' }, 405);
 
   // 1. GET /api/auth/mode: Returns authentication & D1 status
   if (path.endsWith('/auth/mode') && request.method === 'GET') {
@@ -34,7 +36,6 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
       JSON.stringify({
         success: true,
         isEnvAuth: hasEnvSecrets,
-        envUsername: hasEnvSecrets ? env.ADMIN_USERNAME : null,
         isD1Bound: Boolean(env.DB),
       }),
       { headers }
@@ -55,26 +56,46 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
       }
 
       const domain = new URL(formattedUrl).hostname;
-      const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+      const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 
       let parsedTitle = domain;
       let parsedDesc = '';
+      let parsedIcon = faviconUrl;
 
       try {
         const resp = await fetch(formattedUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ApexNav/1.0' },
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ApexNav/1.0',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
           signal: AbortSignal.timeout(3500),
         });
         if (resp.ok) {
           const text = await resp.text();
+          const ogTitleMatch = text.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                               text.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
           const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
-          if (titleMatch && titleMatch[1]) {
+          if (ogTitleMatch && ogTitleMatch[1]) {
+            parsedTitle = ogTitleMatch[1].trim();
+          } else if (titleMatch && titleMatch[1]) {
             parsedTitle = titleMatch[1].trim();
           }
+
           const descMatch = text.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
-                            text.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
+                            text.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i) ||
+                            text.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) ||
+                            text.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
           if (descMatch && descMatch[1]) {
             parsedDesc = descMatch[1].trim();
+          }
+
+          const iconMatch = text.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i) ||
+                            text.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["'](?:shortcut )?icon["']/i) ||
+                            text.match(/<link[^>]*rel=["']apple-touch-icon(?:-precomposed)?["'][^>]*href=["']([^"']+)["']/i);
+          if (iconMatch && iconMatch[1]) {
+            try {
+              parsedIcon = new URL(iconMatch[1].trim(), formattedUrl).href;
+            } catch {}
           }
         }
       } catch {
@@ -86,9 +107,9 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
         JSON.stringify({
           success: true,
           data: {
-            name: parsedTitle.length > 40 ? parsedTitle.slice(0, 40) + '...' : parsedTitle,
-            description: parsedDesc.length > 90 ? parsedDesc.slice(0, 90) + '...' : parsedDesc,
-            icon: faviconUrl,
+            name: parsedTitle.length > 50 ? parsedTitle.slice(0, 50) + '...' : parsedTitle,
+            description: parsedDesc.length > 120 ? parsedDesc.slice(0, 120) + '...' : parsedDesc,
+            icon: parsedIcon,
             domain,
           },
         }),
@@ -122,214 +143,113 @@ export const onRequest: any = async (context: { request: Request; env: Env }) =>
       `).run();
     }
 
-    // 2. LOGIN: POST /api/auth/login
-    if (path.endsWith('/auth/login') && request.method === 'POST') {
-      const { username, password, passwordHash } = await request.json();
+    const navData = async (username: string) => {
+      const row = env.DB ? await env.DB.prepare(
+        'SELECT categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?'
+      ).bind(username).first() : null;
+      return row ? {
+        isNewUser: false,
+        categories: JSON.parse(row.categories_json), sites: JSON.parse(row.sites_json), nodes: JSON.parse(row.nodes_json),
+      } : { isNewUser: true, categories: [], sites: [], nodes: [] };
+    };
+    const loginReply = async (username: string, credentialHash: string) => reply({
+      success: true, user: username, isEnvAuth: hasEnvSecrets, isD1Bound: Boolean(env.DB),
+      ...await navData(username), ...await createSession(username, credentialHash, url.origin),
+    });
 
-      // Mode A: Cloudflare Environment Variables & Secrets Verification
-      if (hasEnvSecrets) {
-        const cleanEnvUn = env.ADMIN_USERNAME!.trim().toLowerCase();
-        const inputUn = (username || '').trim().toLowerCase();
-
-        let isPasswordMatch = false;
-        if (env.ADMIN_PASSWORD && password && password === env.ADMIN_PASSWORD) {
-          isPasswordMatch = true;
-        } else if (env.ADMIN_PASSWORD_HASH && passwordHash && passwordHash === env.ADMIN_PASSWORD_HASH) {
-          isPasswordMatch = true;
-        } else if (env.ADMIN_PASSWORD && passwordHash) {
-          const encoder = new TextEncoder();
-          const buf = await crypto.subtle.digest('SHA-256', encoder.encode(env.ADMIN_PASSWORD));
-          const expectedHash = Array.from(new Uint8Array(buf))
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join('');
-          if (passwordHash === expectedHash) isPasswordMatch = true;
-        }
-
-        if (inputUn === cleanEnvUn && isPasswordMatch) {
-          let categories: any[] = [];
-          let sites: any[] = [];
-          let nodes: any[] = [];
-
-          if (env.DB) {
-            const navRow = await env.DB.prepare(
-              'SELECT categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?'
-            )
-              .bind(cleanEnvUn)
-              .first();
-            if (navRow) {
-              categories = JSON.parse(navRow.categories_json);
-              sites = JSON.parse(navRow.sites_json);
-              nodes = JSON.parse(navRow.nodes_json);
-            }
-          }
-
-          return new Response(
-            JSON.stringify({
-              success: true,
-              isEnvAuth: true,
-              isD1Bound: Boolean(env.DB),
-              user: cleanEnvUn,
-              categories,
-              sites,
-              nodes,
-            }),
-            { headers }
-          );
-        }
-
-        return new Response(JSON.stringify({ success: false, message: '账号或密码错误（Cloudflare 秘钥校验失败）' }), { headers, status: 401 });
-      }
-
-      // Mode B: D1 Database Authentication
-      if (env.DB) {
-        if (!username || !passwordHash) {
-          return new Response(JSON.stringify({ success: false, message: '用户名和密码不可为空' }), { headers, status: 400 });
-        }
-
-        const cleanUn = username.trim().toLowerCase();
-        const user = await env.DB.prepare('SELECT username, password_hash FROM users WHERE username = ?')
-          .bind(cleanUn)
-          .first();
-
-        if (!user || user.password_hash !== passwordHash) {
-          return new Response(JSON.stringify({ success: false, message: '用户名或密码错误' }), { headers, status: 401 });
-        }
-
-        const navRow = await env.DB.prepare(
-          'SELECT categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?'
-        )
-          .bind(cleanUn)
-          .first();
-
-        const categories = navRow ? JSON.parse(navRow.categories_json) : [];
-        const sites = navRow ? JSON.parse(navRow.sites_json) : [];
-        const nodes = navRow ? JSON.parse(navRow.nodes_json) : [];
-
-        return new Response(
-          JSON.stringify({
-            success: true,
-            isEnvAuth: false,
-            isD1Bound: true,
-            user: cleanUn,
-            categories,
-            sites,
-            nodes,
-          }),
-          { headers }
-        );
-      }
-
-      return new Response(JSON.stringify({ success: false, message: '未配置 Cloudflare 环境变量或 D1 数据库' }), { headers, status: 400 });
-    }
-
-    // 3. REGISTER: POST /api/auth/register
-    if (path.endsWith('/auth/register') && request.method === 'POST') {
-      if (hasEnvSecrets) {
-        return new Response(
-          JSON.stringify({ success: false, message: '已启用 Cloudflare 环境变量固定密钥，禁止公网注册账户。' }),
-          { headers, status: 403 }
-        );
-      }
-
-      if (!env.DB) {
-        return new Response(JSON.stringify({ success: false, message: 'D1 数据库未绑定' }), { headers, status: 400 });
-      }
-
-      const { username, passwordHash } = await request.json();
-      const cleanUn = username.trim().toLowerCase();
-
-      const existingUser = await env.DB.prepare('SELECT username FROM users WHERE username = ?').bind(cleanUn).first();
-      if (existingUser) {
-        return new Response(JSON.stringify({ success: false, message: '该用户名已存在' }), { headers, status: 400 });
-      }
-
-      await env.DB.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').bind(cleanUn, passwordHash).run();
-      await env.DB.prepare("INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json) VALUES (?, '[]', '[]', '[]')")
-        .bind(cleanUn)
-        .run();
-
-      return new Response(JSON.stringify({ success: true, user: cleanUn, message: '注册成功' }), { headers });
-    }
-
-    // 4. GET DATA: GET /api/data?username=xxx
-    if (request.method === 'GET') {
-      const username = url.searchParams.get('username')?.trim().toLowerCase();
-      if (!username || !env.DB) {
-        return new Response(
-          JSON.stringify({ success: true, isD1Bound: Boolean(env.DB), categories: null, sites: null, nodes: null }),
-          { headers }
-        );
-      }
-
-      const row = await env.DB.prepare('SELECT categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?')
-        .bind(username)
-        .first();
-
-      if (!row) {
-        return new Response(
-          JSON.stringify({ success: true, isD1Bound: true, isNewUser: true, categories: [], sites: [], nodes: [] }),
-          { headers }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          isD1Bound: true,
-          isNewUser: false,
-          categories: JSON.parse(row.categories_json),
-          sites: JSON.parse(row.sites_json),
-          nodes: JSON.parse(row.nodes_json),
-        }),
-        { headers }
-      );
-    }
-
-    // 5. POST DATA: POST /api/data (Uses robust SELECT -> UPDATE / INSERT for cross-device D1 sync)
-    if (request.method === 'POST') {
-      if (!env.DB) {
-        return new Response(JSON.stringify({ success: true, isD1Bound: false, message: 'Saved locally (D1 not bound)' }), { headers });
-      }
-
+    if (path === '/api/auth/login') {
       const body = await request.json();
-      const { username, categories, sites, nodes } = body;
-      const cleanUn = (username || '').trim().toLowerCase();
-
-      if (!cleanUn || !Array.isArray(categories) || !Array.isArray(sites)) {
-        return new Response(JSON.stringify({ success: false, message: 'Invalid payload' }), { headers, status: 400 });
+      const username = normalizeUsername(body.username);
+      const inputHash = typeof body.passwordHash === 'string' ? body.passwordHash
+        : typeof body.password === 'string' ? await hashPassword(body.password) : '';
+      const expected = username ? await getCredentialHash(env, username) : null;
+      if (!expected || inputHash !== expected) {
+        return reply({ success: false, message: '用户名或密码错误' }, 401);
       }
-
-      const nodesData = Array.isArray(nodes) ? nodes : [];
-      const catsJson = JSON.stringify(categories);
-      const sitesJson = JSON.stringify(sites);
-      const nodesJson = JSON.stringify(nodesData);
-
-      const existing = await env.DB.prepare('SELECT username FROM user_nav_data WHERE username = ?')
-        .bind(cleanUn)
-        .first();
-
-      if (existing) {
-        await env.DB.prepare(`
-          UPDATE user_nav_data
-          SET categories_json = ?, sites_json = ?, nodes_json = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE username = ?
-        `)
-          .bind(catsJson, sitesJson, nodesJson, cleanUn)
-          .run();
-      } else {
-        await env.DB.prepare(`
-          INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json, updated_at)
-          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `)
-          .bind(cleanUn, catsJson, sitesJson, nodesJson)
-          .run();
-      }
-
-      return new Response(JSON.stringify({ success: true, isD1Bound: true, message: `Synced ${cleanUn} to Cloudflare D1` }), { headers });
+      return loginReply(username, expected);
     }
 
-    return new Response(JSON.stringify({ success: false, message: 'Not found' }), { headers, status: 404 });
+    if (path === '/api/auth/register') {
+      if (hasEnvSecrets) return reply({ success: false, message: '已启用固定管理员账号，禁止公网注册。' }, 403);
+      if (!env.DB) return reply({ success: false, message: 'D1 数据库未绑定' }, 503);
+      const { username: rawUsername, passwordHash } = await request.json();
+      const username = normalizeUsername(rawUsername);
+      if (username.length < 2 || username.length > 100 || !/^[a-f0-9]{64}$/.test(passwordHash || '')) {
+        return reply({ success: false, message: '账号或密码格式错误' }, 400);
+      }
+      const existing = await env.DB.prepare('SELECT username FROM users WHERE username = ?').bind(username).first();
+      if (existing) return reply({ success: false, message: '该用户名已存在' }, 409);
+      await env.DB.batch([
+        env.DB.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').bind(username, passwordHash),
+        env.DB.prepare("INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json) VALUES (?, '[]', '[]', '[]')").bind(username),
+      ]);
+      return loginReply(username, passwordHash);
+    }
+
+    // All remaining routes require a signed session; a client-supplied username is never an identity.
+    const username = await authenticate(request, env);
+    if (!username) return reply({ success: false, message: '登录已失效，请重新登录' }, 401);
+    const body = request.method === 'POST' ? await request.json() : {};
+    const requestedUser = request.method === 'GET' ? url.searchParams.get('username') : body.username;
+    if (requestedUser != null && normalizeUsername(requestedUser) !== username) {
+      return reply({ success: false, message: '无权访问其他账号的数据' }, 403);
+    }
+
+    if (path === '/api/auth/change-password') {
+      if (hasEnvSecrets) return reply({ success: false, message: '请在 Cloudflare 环境变量中修改管理员账号密码' }, 403);
+      if (!env.DB) return reply({ success: false, message: 'D1 数据库未绑定' }, 503);
+      if (body.oldPasswordHash !== await getCredentialHash(env, username)) {
+        return reply({ success: false, code: 'wrong_password', message: '当前密码错误' }, 400);
+      }
+      const newUsername = normalizeUsername(body.newUsername);
+      if (newUsername.length < 2 || newUsername.length > 100 || !/^[a-f0-9]{64}$/.test(body.newPasswordHash || '')) {
+        return reply({ success: false, message: '新账号或密码格式错误' }, 400);
+      }
+      if (newUsername === username) {
+        await env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?')
+          .bind(body.newPasswordHash, username).run();
+      } else {
+        const existing = await env.DB.prepare('SELECT username FROM users WHERE username = ?').bind(newUsername).first();
+        if (existing) return reply({ success: false, message: '该用户名已存在' }, 409);
+        // Insert the new parent before moving data, so both deployed schemas (with/without FK) work.
+        await env.DB.batch([
+          env.DB.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').bind(newUsername, body.newPasswordHash),
+          env.DB.prepare('INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json) SELECT ?, categories_json, sites_json, nodes_json FROM user_nav_data WHERE username = ?').bind(newUsername, username),
+          env.DB.prepare('DELETE FROM user_nav_data WHERE username = ?').bind(username),
+          env.DB.prepare('DELETE FROM users WHERE username = ?').bind(username),
+        ]);
+      }
+      return loginReply(newUsername, body.newPasswordHash);
+    }
+
+    if (!env.DB) return reply({ success: false, isD1Bound: false, message: 'D1 数据库未绑定，数据仅保存在本地' }, 503);
+
+    if (request.method === 'GET') {
+      return reply({ success: true, isD1Bound: true, ...await navData(username) });
+    }
+
+    const fields = ['categories', 'sites', 'nodes'] as const;
+    const supplied = fields.map((field) => Object.prototype.hasOwnProperty.call(body, field));
+    if (!supplied.some(Boolean) || fields.some((field, i) => supplied[i] && !Array.isArray(body[field]))) {
+      return reply({ success: false, message: 'Invalid payload' }, 400);
+    }
+    if (hasEnvSecrets) {
+      await env.DB.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?) ON CONFLICT(username) DO NOTHING')
+        .bind(username, await getCredentialHash(env, username)).run();
+    }
+    // Omitted fields are preserved atomically; an explicit [] intentionally clears that field.
+    await env.DB.prepare(`
+      INSERT INTO user_nav_data (username, categories_json, sites_json, nodes_json)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(username) DO UPDATE SET
+        categories_json = CASE WHEN ? THEN excluded.categories_json ELSE user_nav_data.categories_json END,
+        sites_json = CASE WHEN ? THEN excluded.sites_json ELSE user_nav_data.sites_json END,
+        nodes_json = CASE WHEN ? THEN excluded.nodes_json ELSE user_nav_data.nodes_json END,
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(username, ...fields.map((field) => JSON.stringify(body[field] ?? [])), ...supplied.map(Number)).run();
+    return reply({ success: true, isD1Bound: true });
   } catch (err: any) {
-    return new Response(JSON.stringify({ success: false, error: err.message }), { headers, status: 500 });
+    return reply({ success: false, message: err instanceof SyntaxError ? 'Invalid JSON' : '服务暂时不可用' },
+      err instanceof SyntaxError ? 400 : 500);
   }
 };
