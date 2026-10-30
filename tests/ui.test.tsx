@@ -4,7 +4,9 @@ import { act, create } from 'react-test-renderer';
 import { deferred, installBrowser } from './helpers';
 import App from '../src/App';
 import { BookmarkGrid } from '../src/components/BookmarkGrid';
+import { Header } from '../src/components/Header';
 import { SearchHero } from '../src/components/SearchHero';
+import { SettingsModal } from '../src/components/SettingsModal';
 import { saveAuthSession } from '../src/utils/authSession';
 import { getStoredSites, getStoredCategories, saveCategories, saveSites } from '../src/utils/storage';
 import { PREFERENCE_EVENT } from '../src/utils/preferences';
@@ -12,6 +14,21 @@ import { PREFERENCE_EVENT } from '../src/utils/preferences';
 beforeEach(() => {
   installBrowser();
   globalThis.fetch = async () => Response.json({ success: true, isD1Bound: false });
+});
+
+test('settings code loads on first open and stays mounted after closing', async () => {
+  localStorage.setItem('apexnav_widgets', 'false');
+  let view: ReturnType<typeof create>;
+  await act(async () => { view = create(<App />); });
+  try {
+    assert.equal(view!.root.findAllByType(SettingsModal).length, 0);
+    await act(async () => view!.root.findByType(Header).props.onOpenSettings());
+    const settings = view!.root.findByType(SettingsModal);
+    assert.equal(settings.props.isOpen, true);
+    await act(async () => settings.props.onClose());
+    assert.equal(view!.root.findByType(SettingsModal), settings);
+    assert.equal(settings.props.isOpen, false);
+  } finally { await act(async () => view!.unmount()); }
 });
 
 test('deleting a category removes all its bookmarks from state, storage and pinned results', async () => {

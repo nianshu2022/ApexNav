@@ -1,13 +1,8 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { SearchHero } from './components/SearchHero';
 import { WidgetsGrid } from './components/WidgetsGrid';
 import { BookmarkGrid } from './components/BookmarkGrid';
-import { SettingsModal } from './components/SettingsModal';
-import { WidgetHubModal } from './components/WidgetHubModal';
-import { PinModal } from './components/PinModal';
-
-import { CommandBar } from './components/CommandBar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CLOUD_MERGE_EVENT, hasInvalidCloudData, syncStatus, SYNC_EVENT } from './utils/syncState';
@@ -32,6 +27,19 @@ import {
   retryPendingSync,
 } from './utils/storage';
 import type { WidgetConfig } from './types';
+
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(({ SettingsModal }) => ({ default: SettingsModal })));
+const WidgetHubModal = lazy(() => import('./components/WidgetHubModal').then(({ WidgetHubModal }) => ({ default: WidgetHubModal })));
+const PinModal = lazy(() => import('./components/PinModal').then(({ PinModal }) => ({ default: PinModal })));
+const CommandBar = lazy(() => import('./components/CommandBar').then(({ CommandBar }) => ({ default: CommandBar })));
+
+function useHasOpened(isOpen: boolean) {
+  const [hasOpened, setHasOpened] = useState(isOpen);
+  useEffect(() => {
+    if (isOpen) setHasOpened(true);
+  }, [isOpen]);
+  return hasOpened || isOpen;
+}
 
 
 // Official Apple Latest MacBook M3/M4 & macOS 5K Original Quality Wallpapers
@@ -86,6 +94,10 @@ function AppInner() {
   const [isWidgetHubOpen, setIsWidgetHubOpen] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
+  const hasOpenedCommandBar = useHasOpened(isCommandBarOpen);
+  const hasOpenedWidgetHub = useHasOpened(isWidgetHubOpen);
+  const hasOpenedPinModal = useHasOpened(isPinModalOpen);
+  const hasOpenedSettings = useHasOpened(isSettingsOpen);
   const [sync, setSync] = useState(() => syncStatus(currentUsername));
   const [widgetRevision, setWidgetRevision] = useState(0);
 
@@ -369,7 +381,7 @@ function AppInner() {
       </footer>
 
       {/* Command Bar (Ctrl+K) */}
-      <CommandBar
+      {hasOpenedCommandBar && <Suspense fallback={null}><CommandBar
         isOpen={isCommandBarOpen}
         onClose={() => setIsCommandBarOpen(false)}
         sites={sites}
@@ -381,28 +393,28 @@ function AppInner() {
         onOpenSettings={() => { setIsSettingsOpen(true); setIsCommandBarOpen(false); }}
         onChangeEngine={handleChangeEngine}
         onSiteClick={(site) => openLink(site.url)}
-      />
+      /></Suspense>}
 
       {/* Standalone Widget Hub Modal */}
-      <WidgetHubModal
+      {hasOpenedWidgetHub && <Suspense fallback={null}><WidgetHubModal
         isOpen={isWidgetHubOpen}
         onClose={() => setIsWidgetHubOpen(false)}
         showWidgets={showWidgets}
         onToggleWidgets={handleToggleWidgets}
         widgetConfig={widgetConfig}
         onWidgetConfigChange={handleWidgetConfigChange}
-      />
+      /></Suspense>}
 
       {/* PIN Login Modal */}
-      <PinModal
+      {hasOpenedPinModal && <Suspense fallback={null}><PinModal
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
         onSuccess={() => setIsPinModalOpen(false)}
         onConfigureBackend={() => { setIsPinModalOpen(false); setSettingsTab('cloud'); setIsSettingsOpen(true); }}
-      />
+      /></Suspense>}
 
       {/* Settings Modal */}
-      <SettingsModal
+      {hasOpenedSettings && <Suspense fallback={null}><SettingsModal
         isOpen={isSettingsOpen}
         initialTab={settingsTab}
         onClose={() => { setIsSettingsOpen(false); setSettingsTab('sites'); }}
@@ -416,7 +428,7 @@ function AppInner() {
         onAddCategory={handleAddCategory}
         onEditCategory={handleEditCategory}
         onDeleteCategory={handleDeleteCategory}
-      />
+      /></Suspense>}
     </div>
   );
 }
